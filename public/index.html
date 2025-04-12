@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Device Control Panel</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #f4f4f4;
+      padding: 2rem;
+    }
+    h1 {
+      color: #333;
+    }
+    .device {
+      background: white;
+      padding: 1rem;
+      margin: 0.5rem 0;
+      border-radius: 6px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    .online { color: green; font-weight: bold; }
+    .offline { color: red; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>Connected Devices</h1>
+  <div id="deviceList">Loading...</div>
+
+  <script>
+    const socket = new WebSocket(`ws://${location.host}`);
+
+    socket.addEventListener('open', () => {
+      console.log('Connected to backend');
+      socket.send(JSON.stringify({ type: 'panelConnect' }));
+    });
+
+    socket.addEventListener('message', (event) => {
+      const message = JSON.parse(event.data);
+      if (message.type === 'deviceList') {
+        const container = document.getElementById('deviceList');
+        container.innerHTML = '';
+        if (message.data.length === 0) {
+          container.innerHTML = '<p>No devices connected</p>';
+          return;
+        }
+
+        message.data.forEach((device) => {
+          const el = document.createElement('div');
+          el.className = 'device';
+          el.innerHTML = `
+            <div><strong>ID:</strong> ${device.id}</div>
+            <div><strong>Status:</strong> <span class="${device.online ? 'online' : 'offline'}">${device.online ? 'Online' : 'Offline'}</span></div>
+            <div><strong>Last Seen:</strong> ${device.lastSeen}</div>
+          `;
+          container.appendChild(el);
+        });
+      }
+    });
+  </script>
+</body>
+</html>
