@@ -49,6 +49,18 @@ wss.on('connection', (ws, req) => {
                 broadcastDeviceList();
             }
 
+            // Heartbeat update
+            if (data.type === 'heartbeat') {
+                const { deviceId } = data;
+                if (devices.has(deviceId)) {
+                    const existing = devices.get(deviceId);
+                    existing.lastSeen = new Date().toISOString();
+                    existing.online = true;
+                    devices.set(deviceId, existing);
+                    broadcastDeviceList();
+                }
+            }
+
             // Panel handshake
             if (data.type === 'panelConnect') {
                 ws.isPanel = true;
@@ -72,7 +84,7 @@ wss.on('connection', (ws, req) => {
     });
 });
 
-// Heartbeat for stale clients
+// Heartbeat cleanup
 setInterval(() => {
     wss.clients.forEach((ws) => {
         if (!ws.isAlive) return ws.terminate();
