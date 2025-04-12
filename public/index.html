@@ -38,7 +38,7 @@
   <div id="deviceList">Loading...</div>
 
   <script>
-    const socket = new WebSocket(`ws://${location.host}`);
+    const socket = new WebSocket(`wss://${location.host}`);
 
     socket.addEventListener('open', () => {
       console.log('Connected to backend');
