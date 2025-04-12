@@ -29,7 +29,9 @@
   <div id="deviceList">Loading...</div>
 
   <script>
-    const socket = new WebSocket(`ws://${location.host}`);
+    // Dynamically choose WebSocket protocol based on page protocol
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const socket = new WebSocket(`${protocol}//${location.host}`);
 
     socket.addEventListener('open', () => {
       console.log('Connected to backend');
@@ -57,6 +59,19 @@
           container.appendChild(el);
         });
       }
+    });
+
+    // Add error handling for the WebSocket connection
+    socket.addEventListener('error', (error) => {
+      console.error('WebSocket error:', error);
+      document.getElementById('deviceList').innerHTML = 
+        '<p style="color: red">Error connecting to server. Please check console for details.</p>';
+    });
+
+    socket.addEventListener('close', () => {
+      console.log('WebSocket connection closed');
+      document.getElementById('deviceList').innerHTML = 
+        '<p>Connection to server lost. Please refresh the page to reconnect.</p>';
     });
   </script>
 </body>
