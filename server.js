@@ -67,7 +67,7 @@ wss.on('connection', (ws, req) => {
                 console.log('[*] Web panel connected');
                 broadcastDeviceList();
             }
-console.log({data})
+
             // Panel requested data from device
             if (data.type === 'requestData') {
                 const { targetId, dataType } = data;

