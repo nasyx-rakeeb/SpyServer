@@ -31,6 +31,10 @@
       border-radius: 4px;
       cursor: pointer;
     }
+    .btn:disabled {
+      background: #cccccc;
+      cursor: not-allowed;
+    }
     .file-explorer {
       background: white;
       padding: 1rem;
@@ -77,6 +81,10 @@
       color: #666;
       font-size: 0.8rem;
     }
+    .file-item-actions {
+      display: flex;
+      gap: 0.5rem;
+    }
     .directory-icon {
       color: #ffc107;
     }
@@ -88,11 +96,61 @@
       padding: 1rem;
       color: #666;
     }
+    .downloads {
+      background: white;
+      padding: 1rem;
+      margin-top: 1rem;
+      border-radius: 6px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    .download-item {
+      display: flex;
+      align-items: center;
+      padding: 0.5rem;
+      border-bottom: 1px solid #eee;
+      margin-bottom: 0.5rem;
+    }
+    .download-info {
+      flex-grow: 1;
+    }
+    .download-progress {
+      background: #e9ecef;
+      height: 10px;
+      border-radius: 5px;
+      margin: 0.5rem 0;
+      overflow: hidden;
+    }
+    .download-progress-bar {
+      background: #007bff;
+      height: 100%;
+      transition: width 0.3s;
+    }
+    .download-actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+    .download-status {
+      font-size: 0.8rem;
+      color: #666;
+    }
+    .download-status.complete {
+      color: green;
+    }
+    .download-status.error {
+      color: red;
+    }
   </style>
 </head>
 <body>
   <h1>Connected Devices</h1>
   <div id="deviceList">Loading...</div>
+
+  <div id="downloads" class="downloads">
+    <h2>File Downloads</h2>
+    <div id="downloadsList">
+      <p>No active downloads</p>
+    </div>
+  </div>
 
   <div id="fileExplorer" class="file-explorer">
     <div class="file-explorer-header">
@@ -111,6 +169,9 @@
     let currentDeviceId = null;
     let currentPath = "/";
     const socket = new WebSocket(`ws://${location.host}`);
+    
+    // Track downloads
+    const downloads = new Map();
 
     socket.addEventListener('open', () => {
       console.log('Connected to backend');
@@ -160,10 +221,10 @@
 
       if (message.type === 'fileExplorerResponse') {
         const { deviceId, action, path, items, error } = message;
-        
+
         // Only process if this is for the current device
         if (deviceId !== currentDeviceId) return;
-        
+
         if (error) {
           alert(`Error: ${error}`);
           return;
@@ -172,21 +233,24 @@
         // Update current path
         currentPath = path;
         document.getElementById('currentPath').textContent = currentPath;
-        
+
         // Render file list
         const fileList = document.getElementById('fileList');
         fileList.innerHTML = '';
-        
+
         if (items && items.length > 0) {
           items.forEach(item => {
             const fileItem = document.createElement('div');
             fileItem.className = 'file-item';
-            
+
             if (item.type === 'directory') {
               fileItem.innerHTML = `
                 <div class="file-item-icon directory-icon">📁</div>
                 <div class="file-item-name">${item.name}</div>
                 <div class="file-item-details">${formatDate(item.lastModified)}</div>
+                <div class="file-item-actions">
+                  <button class="btn" onclick="downloadItem('${item.path}', 'directory'); event.stopPropagation();">Download</button>
+                </div>
               `;
               fileItem.onclick = () => navigateTo(item.path);
             } else {
@@ -194,13 +258,80 @@
                 <div class="file-item-icon file-icon">📄</div>
                 <div class="file-item-name">${item.name}</div>
                 <div class="file-item-details">${formatFileSize(item.size)} - ${formatDate(item.lastModified)}</div>
+                <div class="file-item-actions">
+                  <button class="btn" onclick="downloadItem('${item.path}', 'file'); event.stopPropagation();">Download</button>
+                </div>
               `;
             }
-            
+
             fileList.appendChild(fileItem);
           });
         } else {
           fileList.innerHTML = '<div class="loading">No files found</div>';
+        }
+      }
+      
+      // Handle download related messages
+      if (message.type === 'fileDownloadStarted') {
+        const { requestId, deviceId, path, downloadType } = message;
+        const fileName = path.split('/').pop();
+        
+        // Add to downloads list
+        downloads.set(requestId, {
+          deviceId,
+          path,
+          fileName,
+          downloadType,
+          status: 'pending',
+          progress: 0
+        });
+        
+        updateDownloadsList();
+      }
+      
+      if (message.type === 'fileDownloadProgress') {
+        const { requestId, progress, bytesTransferred, totalBytes, transferId, currentFile } = message;
+        
+        // Update download progress
+        const download = downloads.get(requestId);
+        if (download) {
+          download.progress = progress;
+          download.bytesTransferred = bytesTransferred;
+          download.totalBytes = totalBytes;
+          download.status = 'downloading';
+          download.transferId = transferId;
+          download.currentFile = currentFile;
+          
+          updateDownloadsList();
+        }
+      }
+      
+      if (message.type === 'fileDownloadComplete') {
+        const { requestId, path, name, size, transferId } = message;
+        
+        // Update download status
+        const download = downloads.get(requestId);
+        if (download) {
+          download.progress = 100;
+          download.status = 'complete';
+          download.downloadPath = path;
+          download.name = name;
+          download.size = size;
+          
+          updateDownloadsList();
+        }
+      }
+      
+      if (message.type === 'fileDownloadError') {
+        const { requestId, error } = message;
+        
+        // Update download status
+        const download = downloads.get(requestId);
+        if (download) {
+          download.status = 'error';
+          download.error = error;
+          
+          updateDownloadsList();
         }
       }
     });
@@ -212,11 +343,88 @@
         dataType: dataType
       }));
     }
+    
+    function downloadItem(path, downloadType) {
+      socket.send(JSON.stringify({
+        type: 'fileDownload',
+        targetId: currentDeviceId,
+        path: path,
+        downloadType: downloadType
+      }));
+      
+      alert(`Download of ${downloadType} started: ${path}`);
+    }
+    
+    function updateDownloadsList() {
+      const container = document.getElementById('downloadsList');
+      
+      if (downloads.size === 0) {
+        container.innerHTML = '<p>No active downloads</p>';
+        return;
+      }
+      
+      container.innerHTML = '';
+      
+      // Sort downloads by status (active first, then completed, then errors)
+      const sortedDownloads = Array.from(downloads.entries()).sort((a, b) => {
+        const statusOrder = { 'downloading': 0, 'pending': 1, 'complete': 2, 'error': 3 };
+        return statusOrder[a[1].status] - statusOrder[b[1].status];
+      });
+      
+      sortedDownloads.forEach(([requestId, download]) => {
+        const el = document.createElement('div');
+        el.className = 'download-item';
+        
+        let statusText = '';
+        let statusClass = '';
+        
+        switch (download.status) {
+          case 'pending':
+            statusText = 'Waiting for device to respond...';
+            break;
+          case 'downloading':
+            const bytesText = download.bytesTransferred && download.totalBytes ? 
+              `${formatFileSize(download.bytesTransferred)} / ${formatFileSize(download.totalBytes)}` : '';
+            statusText = `Downloading${download.currentFile ? ` (${download.currentFile})` : ''} - ${bytesText}`;
+            break;
+          case 'complete':
+            statusText = 'Download complete';
+            statusClass = 'complete';
+            break;
+          case 'error':
+            statusText = `Error: ${download.error || 'Unknown error'}`;
+            statusClass = 'error';
+            break;
+        }
+        
+        el.innerHTML = `
+          <div class="download-info">
+            <div><strong>${download.fileName || download.name || 'Unknown'}</strong> (${download.downloadType})</div>
+            <div class="download-progress">
+              <div class="download-progress-bar" style="width: ${download.progress || 0}%"></div>
+            </div>
+            <div class="download-status ${statusClass}">${statusText}</div>
+          </div>
+          <div class="download-actions">
+            ${download.status === 'complete' ? 
+              `<a class="btn" href="${download.downloadPath}" target="_blank">Open</a>` : ''}
+            <button class="btn" onclick="removeDownload('${requestId}')">Remove</button>
+          </div>
+        `;
+        
+        container.appendChild(el);
+      });
+    }
+    
+    function removeDownload(requestId) {
+      downloads.delete(requestId);
+      updateDownloadsList();
+    }
 
     function openFileExplorer(deviceId) {
       currentDeviceId = deviceId;
       document.getElementById('fileExplorer').style.display = 'block';
-      
+
       // Request root directory listing
       socket.send(JSON.stringify({
         type: 'fileExplorer',
@@ -224,7 +432,7 @@
         action: 'listRoot',
         path: '/'
       }));
-      
+
       currentPath = '/';
       document.getElementById('currentPath').textContent = 'Loading...';
       document.getElementById('fileList').innerHTML = '<div class="loading">Loading...</div>';
@@ -237,11 +445,12 @@
         action: 'listDirectory',
         path: path
       }));
-      
+
       document.getElementById('fileList').innerHTML = '<div class="loading">Loading...</div>';
     }
 
     function formatFileSize(bytes) {
+      if (!bytes && bytes !== 0) return 'Unknown size';
       if (bytes === 0) return '0 Bytes';
       const k = 1024;
       const sizes = ['Bytes', 'KB', 'MB', 'GB'];
@@ -250,6 +459,7 @@
     }
 
     function formatDate(timestamp) {
+      if (!timestamp) return 'Unknown date';
       return new Date(timestamp).toLocaleString();
     }
 
