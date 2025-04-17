@@ -5,6 +5,7 @@ const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
 const fs = require('fs');
+const archiver = require('archiver');
 const { v4: uuidv4 } = require('uuid');
 
 const app = express();
@@ -477,6 +478,61 @@ wss.on('connection', (ws, req) => {
             }
         }
     });
+});
+
+// Add this to server.js
+app.get('/downloadDirectory/:deviceId/:dirName', (req, res) => {
+    const { deviceId, dirName } = req.params;
+    const dirPath = path.join(downloadsDir, deviceId, dirName);
+    
+    if (!fs.existsSync(dirPath)) {
+        return res.status(404).send('Directory not found');
+    }
+    
+    // Set headers
+    res.attachment(`${dirName}.zip`);
+    
+    // Create zip stream
+    const archive = archiver('zip', {
+        zlib: { level: 9 } // Compression level
+    });
+    
+    // Pipe archive to response
+    archive.pipe(res);
+    
+    // Add directory contents to zip
+    archive.directory(dirPath, false);
+    
+    // Finalize archive
+    archive.finalize();
+});
+
+app.post('/removeDownload', express.json(), (req, res) => {
+    const { deviceId, name, downloadType } = req.body;
+    
+    if (!deviceId || !name) {
+        return res.status(400).json({ error: 'Missing required parameters' });
+    }
+    
+    const itemPath = path.join(downloadsDir, deviceId, name);
+    
+    try {
+        if (fs.existsSync(itemPath)) {
+            if (downloadType === 'directory') {
+                // Remove directory recursively
+                fs.rmSync(itemPath, { recursive: true, force: true });
+            } else {
+                // Remove file
+                fs.unlinkSync(itemPath);
+            }
+            res.json({ success: true });
+        } else {
+            res.status(404).json({ error: 'File or directory not found' });
+        }
+    } catch (err) {
+        console.error(`Error removing ${itemPath}:`, err);
+        res.status(500).json({ error: 'Failed to remove file or directory' });
+    }
 });
 
 // Function to write a complete file from chunks

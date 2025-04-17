@@ -407,7 +407,9 @@
           </div>
           <div class="download-actions">
             ${download.status === 'complete' ? 
-              `<a class="btn" href="${download.downloadPath}" target="_blank">Open</a>` : ''}
+  `<a class="btn" href="${download.downloadType === 'directory' ? 
+    `/downloadDirectory/${download.deviceId}/${download.name}` : 
+    download.downloadPath}" download>Download</a>` : ''}
             <button class="btn" onclick="removeDownload('${requestId}')">Remove</button>
           </div>
         `;
@@ -417,9 +419,40 @@
     }
     
     function removeDownload(requestId) {
-      downloads.delete(requestId);
-      updateDownloadsList();
+    const download = downloads.get(requestId);
+    
+    if (download && download.status === 'complete') {
+        // Send request to server to actually delete the file/directory
+        fetch('/removeDownload', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                deviceId: download.deviceId,
+                name: download.name,
+                downloadType: download.downloadType
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                downloads.delete(requestId);
+                updateDownloadsList();
+            } else {
+                alert('Failed to remove file: ' + (data.error || 'Unknown error'));
+            }
+        })
+        .catch(err => {
+            console.error('Error removing file:', err);
+            alert('Error removing file');
+        });
+    } else {
+        // Just remove from UI if not complete or if we don't have file info
+        downloads.delete(requestId);
+        updateDownloadsList();
     }
+}
 
     function openFileExplorer(deviceId) {
       currentDeviceId = deviceId;
