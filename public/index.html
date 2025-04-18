@@ -3,167 +3,205 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Device Control Panel</title>
+  <title>Remote Device Control</title>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
   <style>
-    body {
-      font-family: sans-serif;
-      background: #f4f4f4;
-      padding: 2rem;
+    .device-card {
+      transition: all 0.3s ease;
     }
-    h1, h2 {
-      color: #333;
+    .device-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
     }
-    .device {
-      background: white;
-      padding: 1rem;
-      margin: 0.5rem 0;
-      border-radius: 6px;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    .progress-bar {
+      transition: width 0.3s ease;
     }
-    .online { color: green; font-weight: bold; }
-    .offline { color: red; font-weight: bold; }
-    .btn {
-      padding: 0.4rem 0.8rem;
-      margin: 0.2rem;
-      background: #007bff;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
+    .nav-tab {
+      transition: all 0.2s ease;
     }
-    .btn:disabled {
-      background: #cccccc;
-      cursor: not-allowed;
+    .nav-tab:hover {
+      background-color: rgba(243, 244, 246, 1);
     }
-    .file-explorer {
-      background: white;
-      padding: 1rem;
-      margin-top: 1rem;
-      border-radius: 6px;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-      display: none;
-    }
-    .file-explorer-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 1rem;
-    }
-    .file-explorer-path {
-      font-weight: bold;
-      margin-bottom: 0.5rem;
-      word-break: break-all;
-    }
-    .file-explorer-breadcrumb {
-      background: #f8f9fa;
-      padding: 0.5rem;
-      border-radius: 4px;
-      margin-bottom: 1rem;
+    .nav-tab.active {
+      background-color: rgba(59, 130, 246, 0.1);
+      color: rgba(59, 130, 246, 1);
+      border-left: 4px solid rgba(59, 130, 246, 1);
     }
     .file-item {
-      display: flex;
-      align-items: center;
-      padding: 0.5rem;
-      border-bottom: 1px solid #eee;
-      cursor: pointer;
+      transition: all 0.2s ease;
     }
     .file-item:hover {
-      background: #f8f9fa;
+      background-color: rgba(243, 244, 246, 1);
     }
-    .file-item-icon {
-      margin-right: 0.5rem;
-      font-size: 1.2rem;
+    .file-explorer-modal {
+      transform: scale(0.95);
+      opacity: 0;
+      transition: all 0.2s ease;
+      pointer-events: none;
     }
-    .file-item-name {
-      flex-grow: 1;
+    .file-explorer-modal.active {
+      transform: scale(1);
+      opacity: 1;
+      pointer-events: auto;
     }
-    .file-item-details {
-      color: #666;
-      font-size: 0.8rem;
+    .badge-pulse {
+      animation: pulse 2s infinite;
     }
-    .file-item-actions {
-      display: flex;
-      gap: 0.5rem;
-    }
-    .directory-icon {
-      color: #ffc107;
-    }
-    .file-icon {
-      color: #6c757d;
-    }
-    .loading {
-      text-align: center;
-      padding: 1rem;
-      color: #666;
-    }
-    .downloads {
-      background: white;
-      padding: 1rem;
-      margin-top: 1rem;
-      border-radius: 6px;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-    }
-    .download-item {
-      display: flex;
-      align-items: center;
-      padding: 0.5rem;
-      border-bottom: 1px solid #eee;
-      margin-bottom: 0.5rem;
-    }
-    .download-info {
-      flex-grow: 1;
-    }
-    .download-progress {
-      background: #e9ecef;
-      height: 10px;
-      border-radius: 5px;
-      margin: 0.5rem 0;
-      overflow: hidden;
-    }
-    .download-progress-bar {
-      background: #007bff;
-      height: 100%;
-      transition: width 0.3s;
-    }
-    .download-actions {
-      display: flex;
-      gap: 0.5rem;
-    }
-    .download-status {
-      font-size: 0.8rem;
-      color: #666;
-    }
-    .download-status.complete {
-      color: green;
-    }
-    .download-status.error {
-      color: red;
+    @keyframes pulse {
+      0% {
+        box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7);
+      }
+      70% {
+        box-shadow: 0 0 0 10px rgba(220, 38, 38, 0);
+      }
+      100% {
+        box-shadow: 0 0 0 0 rgba(220, 38, 38, 0);
+      }
     }
   </style>
 </head>
-<body>
-  <h1>Connected Devices</h1>
-  <div id="deviceList">Loading...</div>
+<body class="bg-gray-50 font-sans">
+  <!-- Top Navigation Bar -->
+  <nav class="bg-white shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex justify-between h-16">
+        <div class="flex items-center">
+          <i class="fas fa-mobile-alt text-blue-500 text-2xl mr-3"></i>
+          <h1 class="text-xl font-bold text-gray-800">Remote Device Control</h1>
+        </div>
+        <div class="flex items-center">
+          <div class="ml-4 flex items-center md:ml-6">
+            <button id="refreshBtn" class="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-md flex items-center transition duration-150 ease-in-out">
+              <i class="fas fa-sync-alt mr-2"></i>
+              <span>Refresh</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </nav>
 
-  <div id="downloads" class="downloads">
-    <h2>File Downloads</h2>
-    <div id="downloadsList">
-      <p>No active downloads</p>
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <!-- Main Content -->
+    <div class="flex flex-col md:flex-row">
+      <!-- Left Sidebar -->
+      <div class="w-full md:w-1/4 md:pr-6 mb-6 md:mb-0">
+        <div class="bg-white rounded-lg shadow-sm p-4">
+          <h2 class="text-lg font-semibold text-gray-700 mb-4">Navigation</h2>
+          <div class="space-y-1">
+            <button id="devicesTab" class="nav-tab active flex items-center px-4 py-2 text-sm font-medium text-gray-700 rounded-md w-full text-left pl-3">
+              <i class="fas fa-mobile-alt mr-3 text-gray-500"></i>
+              <span>Connected Devices</span>
+            </button>
+            <button id="downloadsTab" class="nav-tab flex items-center px-4 py-2 text-sm font-medium text-gray-700 rounded-md w-full text-left pl-3">
+              <i class="fas fa-download mr-3 text-gray-500"></i>
+              <span>Downloads</span>
+              <span id="downloadsCounter" class="ml-auto bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded-full hidden">0</span>
+            </button>
+          </div>
+        </div>
+        
+        <div class="bg-white rounded-lg shadow-sm p-4 mt-6">
+          <h2 class="text-lg font-semibold text-gray-700 mb-4">Statistics</h2>
+          <div class="flex flex-col space-y-4">
+            <div class="bg-gray-50 rounded-lg p-3">
+              <div class="text-sm text-gray-500">Connected Devices</div>
+              <div class="text-2xl font-bold text-gray-800" id="connectedCount">0</div>
+            </div>
+            <div class="bg-gray-50 rounded-lg p-3">
+              <div class="text-sm text-gray-500">Active Downloads</div>
+              <div class="text-2xl font-bold text-gray-800" id="activeDownloadsCount">0</div>
+            </div>
+            <div class="bg-gray-50 rounded-lg p-3">
+              <div class="text-sm text-gray-500">Total Downloads</div>
+              <div class="text-2xl font-bold text-gray-800" id="totalDownloadsCount">0</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main Content Area -->
+      <div class="w-full md:w-3/4">
+        <!-- Devices Panel -->
+        <div id="devicesPanel" class="bg-white rounded-lg shadow-sm p-6">
+          <div class="flex justify-between items-center mb-6">
+            <h2 class="text-xl font-bold text-gray-800">Connected Devices</h2>
+            <div id="lastUpdated" class="text-sm text-gray-500">Last updated: Never</div>
+          </div>
+          
+          <div id="deviceList" class="grid grid-cols-1 gap-6">
+            <div class="flex items-center justify-center h-32 bg-gray-50 rounded-lg">
+              <div class="flex items-center text-gray-500">
+                <i class="fas fa-spinner fa-spin mr-3"></i>
+                <span>Loading devices...</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Downloads Panel (initially hidden) -->
+        <div id="downloadsPanel" class="bg-white rounded-lg shadow-sm p-6 hidden">
+          <div class="flex justify-between items-center mb-6">
+            <h2 class="text-xl font-bold text-gray-800">File Downloads</h2>
+            <div class="flex space-x-2">
+              <button id="clearDownloads" class="text-sm text-gray-500 hover:text-gray-700 flex items-center">
+                <i class="fas fa-trash-alt mr-1"></i>
+                <span>Clear completed</span>
+              </button>
+            </div>
+          </div>
+          
+          <div id="downloadsList" class="space-y-4">
+            <div class="flex items-center justify-center h-32 bg-gray-50 rounded-lg">
+              <div class="text-gray-500">No active downloads</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <div id="fileExplorer" class="file-explorer">
-    <div class="file-explorer-header">
-      <h2>File Explorer</h2>
-      <button class="btn" id="closeExplorer">Close</button>
-    </div>
-    <div class="file-explorer-breadcrumb">
-      <div class="file-explorer-path" id="currentPath">Loading...</div>
-    </div>
-    <div id="fileList">
-      <div class="loading">Loading...</div>
+  <!-- File Explorer Modal -->
+  <div id="fileExplorer" class="file-explorer-modal fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-xl w-11/12 md:w-3/4 lg:w-2/3 max-h-screen flex flex-col">
+      <div class="flex justify-between items-center border-b p-4">
+        <div class="flex items-center">
+          <i class="fas fa-folder-open text-blue-500 mr-3"></i>
+          <h3 class="text-lg font-bold text-gray-800">File Explorer</h3>
+          <span id="explorerDeviceId" class="ml-3 text-sm text-gray-500 hidden md:inline"></span>
+        </div>
+        <button id="closeExplorer" class="text-gray-500 hover:text-gray-700">
+          <i class="fas fa-times text-xl"></i>
+        </button>
+      </div>
+      
+      <div class="p-4 border-b">
+        <div class="flex items-center overflow-x-auto whitespace-nowrap" id="breadcrumbContainer">
+          <button class="flex items-center text-blue-500 hover:text-blue-700" onclick="navigateTo('/')">
+            <i class="fas fa-home"></i>
+          </button>
+          <div id="breadcrumbs" class="flex items-center ml-2">
+            <!-- Breadcrumbs will be added here -->
+          </div>
+        </div>
+      </div>
+
+      <div class="overflow-y-auto flex-grow p-4" style="max-height: 60vh;">
+        <div id="fileList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div class="flex items-center justify-center h-32 bg-gray-50 rounded-lg col-span-full">
+            <div class="flex items-center text-gray-500">
+              <i class="fas fa-spinner fa-spin mr-3"></i>
+              <span>Loading files...</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
+
+  <!-- Toast Notifications -->
+  <div id="toastContainer" class="fixed bottom-4 right-4 z-50 flex flex-col space-y-2"></div>
 
   <script>
     let currentDeviceId = null;
@@ -172,10 +210,73 @@
     
     // Track downloads
     const downloads = new Map();
+    let totalDownloadsCount = 0;
+    
+    // Date formatter
+    const dateFormatter = new Intl.DateTimeFormat('default', {
+      year: 'numeric',
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    // Toast notification function
+    function showToast(message, type = 'info') {
+      const toast = document.createElement('div');
+      let bgColor = 'bg-blue-500';
+      let icon = 'fas fa-info-circle';
+      
+      switch(type) {
+        case 'success':
+          bgColor = 'bg-green-500';
+          icon = 'fas fa-check-circle';
+          break;
+        case 'error':
+          bgColor = 'bg-red-500';
+          icon = 'fas fa-exclamation-circle';
+          break;
+        case 'warning':
+          bgColor = 'bg-yellow-500';
+          icon = 'fas fa-exclamation-triangle';
+          break;
+      }
+      
+      toast.className = `${bgColor} text-white px-4 py-3 rounded-lg shadow-lg flex items-center min-w-min max-w-md`;
+      toast.innerHTML = `
+        <i class="${icon} mr-3"></i>
+        <span>${message}</span>
+        <button class="ml-auto text-white hover:text-gray-200">
+          <i class="fas fa-times"></i>
+        </button>
+      `;
+      
+      document.getElementById('toastContainer').appendChild(toast);
+      
+      toast.querySelector('button').addEventListener('click', () => {
+        toast.remove();
+      });
+      
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%)';
+        toast.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+        setTimeout(() => toast.remove(), 500);
+      }, 4000);
+    }
 
     socket.addEventListener('open', () => {
       console.log('Connected to backend');
       socket.send(JSON.stringify({ type: 'panelConnect' }));
+      showToast('Connected to server', 'success');
+    });
+
+    socket.addEventListener('error', () => {
+      showToast('Connection error', 'error');
+    });
+
+    socket.addEventListener('close', () => {
+      showToast('Disconnected from server', 'warning');
     });
 
     socket.addEventListener('message', (event) => {
@@ -185,24 +286,73 @@
         const container = document.getElementById('deviceList');
         container.innerHTML = '';
 
+        document.getElementById('lastUpdated').textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+        document.getElementById('connectedCount').textContent = message.data.filter(d => d.online).length;
+
         if (message.data.length === 0) {
-          container.innerHTML = '<p>No devices connected</p>';
+          container.innerHTML = `
+            <div class="flex flex-col items-center justify-center h-32 bg-gray-50 rounded-lg">
+              <i class="fas fa-mobile-alt text-gray-300 text-4xl mb-2"></i>
+              <div class="text-gray-500">No devices connected</div>
+            </div>
+          `;
           return;
         }
 
         message.data.forEach((device) => {
-          const el = document.createElement('div');
-          el.className = 'device';
-          el.innerHTML = `
-            <div><strong>ID:</strong> ${device.id}</div>
-            <div><strong>Status:</strong> <span class="${device.online ? 'online' : 'offline'}">${device.online ? 'Online' : 'Offline'}</span></div>
-            <div><strong>Last Seen:</strong> ${device.lastSeen}</div>
-            <button class="btn" onclick="requestData('${device.id}', 'contacts')">Download Contacts</button>
-            <button class="btn" onclick="requestData('${device.id}', 'sms')">Download SMS</button>
-            <button class="btn" onclick="requestData('${device.id}', 'calls')">Download Call Logs</button>
-            <button class="btn" onclick="openFileExplorer('${device.id}')" ${!device.online ? 'disabled' : ''}>File Explorer</button>
+          const card = document.createElement('div');
+          card.className = 'device-card bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden';
+          
+          const statusClass = device.online ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+          const statusIcon = device.online ? 'fa-circle-check' : 'fa-circle-xmark';
+          
+          card.innerHTML = `
+            <div class="p-5">
+              <div class="flex justify-between items-start">
+                <div class="flex items-center">
+                  <i class="fas fa-mobile-alt text-gray-400 text-2xl mr-3"></i>
+                  <div>
+                    <h3 class="text-lg font-semibold text-gray-800">${device.id}</h3>
+                    <div class="flex items-center mt-1">
+                      <span class="${statusClass} text-xs px-2 py-1 rounded-full flex items-center">
+                        <i class="fas ${statusIcon} mr-1"></i>
+                        ${device.online ? 'Online' : 'Offline'}
+                      </span>
+                      <span class="text-xs text-gray-500 ml-3">Last seen: ${formatTimeAgo(device.lastSeen)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="mt-4">
+                <div class="grid grid-cols-2 gap-2">
+                  <button class="bg-blue-500 hover:bg-blue-600 text-white py-2 px-3 rounded flex items-center justify-center transition duration-150 ease-in-out text-sm"
+                          onclick="requestData('${device.id}', 'contacts')">
+                    <i class="fas fa-address-book mr-2"></i>
+                    <span>Contacts</span>
+                  </button>
+                  <button class="bg-blue-500 hover:bg-blue-600 text-white py-2 px-3 rounded flex items-center justify-center transition duration-150 ease-in-out text-sm"
+                          onclick="requestData('${device.id}', 'sms')">
+                    <i class="fas fa-comment-alt mr-2"></i>
+                    <span>SMS</span>
+                  </button>
+                  <button class="bg-blue-500 hover:bg-blue-600 text-white py-2 px-3 rounded flex items-center justify-center transition duration-150 ease-in-out text-sm"
+                          onclick="requestData('${device.id}', 'calls')">
+                    <i class="fas fa-phone-alt mr-2"></i>
+                    <span>Call Logs</span>
+                  </button>
+                  <button class="bg-blue-500 hover:bg-blue-600 text-white py-2 px-3 rounded flex items-center justify-center transition duration-150 ease-in-out text-sm"
+                          onclick="openFileExplorer('${device.id}')" ${!device.online ? 'disabled' : ''}
+                          ${!device.online ? 'class="bg-gray-300 text-gray-500 cursor-not-allowed py-2 px-3 rounded flex items-center justify-center text-sm"' : ''}>
+                    <i class="fas fa-folder-open mr-2"></i>
+                    <span>Files</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           `;
-          container.appendChild(el);
+          
+          container.appendChild(card);
         });
       }
 
@@ -217,6 +367,8 @@
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
+        
+        showToast(`${dataType.charAt(0).toUpperCase() + dataType.slice(1)} downloaded successfully`, 'success');
       }
 
       if (message.type === 'fileExplorerResponse') {
@@ -226,13 +378,13 @@
         if (deviceId !== currentDeviceId) return;
 
         if (error) {
-          alert(`Error: ${error}`);
+          showToast(`Error: ${error}`, 'error');
           return;
         }
 
         // Update current path
         currentPath = path;
-        document.getElementById('currentPath').textContent = currentPath;
+        updateBreadcrumbs(path);
 
         // Render file list
         const fileList = document.getElementById('fileList');
@@ -241,25 +393,45 @@
         if (items && items.length > 0) {
           items.forEach(item => {
             const fileItem = document.createElement('div');
-            fileItem.className = 'file-item';
-
+            fileItem.className = 'file-item bg-white border border-gray-200 rounded-lg p-3 flex flex-col';
+            
             if (item.type === 'directory') {
               fileItem.innerHTML = `
-                <div class="file-item-icon directory-icon">📁</div>
-                <div class="file-item-name">${item.name}</div>
-                <div class="file-item-details">${formatDate(item.lastModified)}</div>
-                <div class="file-item-actions">
-                  <button class="btn" onclick="downloadItem('${item.path}', 'directory'); event.stopPropagation();">Download</button>
+                <div class="flex items-center mb-2 cursor-pointer" onclick="navigateTo('${item.path}')">
+                  <div class="bg-yellow-100 w-10 h-10 rounded-lg flex items-center justify-center mr-3">
+                    <i class="fas fa-folder text-yellow-500"></i>
+                  </div>
+                  <div class="truncate flex-1">
+                    <div class="font-medium text-gray-800 truncate">${item.name}</div>
+                    <div class="text-xs text-gray-500">${formatDate(item.lastModified)}</div>
+                  </div>
+                </div>
+                <div class="mt-auto pt-2 border-t flex justify-end">
+                  <button class="text-blue-500 hover:text-blue-700 text-sm flex items-center"
+                          onclick="downloadItem('${item.path}', 'directory'); event.stopPropagation();">
+                    <i class="fas fa-download mr-1"></i>
+                    <span>Download</span>
+                  </button>
                 </div>
               `;
-              fileItem.onclick = () => navigateTo(item.path);
             } else {
+              const fileIcon = getFileIcon(item.name);
               fileItem.innerHTML = `
-                <div class="file-item-icon file-icon">📄</div>
-                <div class="file-item-name">${item.name}</div>
-                <div class="file-item-details">${formatFileSize(item.size)} - ${formatDate(item.lastModified)}</div>
-                <div class="file-item-actions">
-                  <button class="btn" onclick="downloadItem('${item.path}', 'file'); event.stopPropagation();">Download</button>
+                <div class="flex items-center mb-2">
+                  <div class="bg-gray-100 w-10 h-10 rounded-lg flex items-center justify-center mr-3">
+                    <i class="${fileIcon}"></i>
+                  </div>
+                  <div class="truncate flex-1">
+                    <div class="font-medium text-gray-800 truncate">${item.name}</div>
+                    <div class="text-xs text-gray-500">${formatFileSize(item.size)} · ${formatDate(item.lastModified)}</div>
+                  </div>
+                </div>
+                <div class="mt-auto pt-2 border-t flex justify-end">
+                  <button class="text-blue-500 hover:text-blue-700 text-sm flex items-center"
+                          onclick="downloadItem('${item.path}', 'file'); event.stopPropagation();">
+                    <i class="fas fa-download mr-1"></i>
+                    <span>Download</span>
+                  </button>
                 </div>
               `;
             }
@@ -267,7 +439,12 @@
             fileList.appendChild(fileItem);
           });
         } else {
-          fileList.innerHTML = '<div class="loading">No files found</div>';
+          fileList.innerHTML = `
+            <div class="flex flex-col items-center justify-center h-32 bg-gray-50 rounded-lg col-span-full">
+              <i class="fas fa-folder-open text-gray-300 text-4xl mb-2"></i>
+              <div class="text-gray-500">Empty folder</div>
+            </div>
+          `;
         }
       }
       
@@ -283,10 +460,20 @@
           fileName,
           downloadType,
           status: 'pending',
-          progress: 0
+          progress: 0,
+          startTime: Date.now()
         });
         
+        totalDownloadsCount++;
+        document.getElementById('totalDownloadsCount').textContent = totalDownloadsCount;
+        
         updateDownloadsList();
+        updateDownloadsCounter();
+        
+        // Switch to downloads tab if not already there
+        showDownloadsPanel();
+        
+        showToast(`Started downloading: ${fileName}`, 'info');
       }
       
       if (message.type === 'fileDownloadProgress') {
@@ -303,6 +490,7 @@
           download.currentFile = currentFile;
           
           updateDownloadsList();
+          updateDownloadsCounter();
         }
       }
       
@@ -317,8 +505,12 @@
           download.downloadPath = path;
           download.name = name;
           download.size = size;
+          download.completionTime = Date.now();
           
           updateDownloadsList();
+          updateDownloadsCounter();
+          
+          showToast(`Download complete: ${name || download.fileName}`, 'success');
         }
       }
       
@@ -332,6 +524,9 @@
           download.error = error;
           
           updateDownloadsList();
+          updateDownloadsCounter();
+          
+          showToast(`Download error: ${download.fileName} - ${error}`, 'error');
         }
       }
     });
@@ -342,6 +537,8 @@
         targetId: deviceId,
         dataType: dataType
       }));
+      
+      showToast(`Requesting ${dataType} from device ${deviceId}...`, 'info');
     }
     
     function downloadItem(path, downloadType) {
@@ -352,14 +549,25 @@
         downloadType: downloadType
       }));
       
-      alert(`Download of ${downloadType} started: ${path}`);
+      const fileName = path.split('/').pop();
+      showToast(`Starting download: ${fileName}`, 'info');
     }
     
     function updateDownloadsList() {
       const container = document.getElementById('downloadsList');
+      const activeDownloadsCount = Array.from(downloads.values()).filter(
+        d => d.status === 'downloading' || d.status === 'pending'
+      ).length;
+      
+      document.getElementById('activeDownloadsCount').textContent = activeDownloadsCount;
       
       if (downloads.size === 0) {
-        container.innerHTML = '<p>No active downloads</p>';
+        container.innerHTML = `
+          <div class="flex flex-col items-center justify-center h-32 bg-gray-50 rounded-lg">
+            <i class="fas fa-download text-gray-300 text-4xl mb-2"></i>
+            <div class="text-gray-500">No downloads</div>
+          </div>
+        `;
         return;
       }
       
@@ -368,49 +576,134 @@
       // Sort downloads by status (active first, then completed, then errors)
       const sortedDownloads = Array.from(downloads.entries()).sort((a, b) => {
         const statusOrder = { 'downloading': 0, 'pending': 1, 'complete': 2, 'error': 3 };
+        if (statusOrder[a[1].status] === statusOrder[b[1].status]) {
+          // If same status, sort by most recent first
+          return (b[1].startTime || 0) - (a[1].startTime || 0);
+        }
         return statusOrder[a[1].status] - statusOrder[b[1].status];
       });
       
       sortedDownloads.forEach(([requestId, download]) => {
         const el = document.createElement('div');
-        el.className = 'download-item';
+        el.className = 'bg-white border border-gray-200 rounded-lg overflow-hidden';
         
-        let statusText = '';
-        let statusClass = '';
+        let statusBadge = '';
+        let progressBar = '';
+        let actionButtons = '';
+        let statusDetails = '';
         
         switch (download.status) {
           case 'pending':
-            statusText = 'Waiting for device to respond...';
+            statusBadge = `<span class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">Pending</span>`;
+            progressBar = `
+              <div class="w-full bg-gray-200 rounded-full h-2 mt-2">
+                <div class="bg-blue-500 h-2 rounded-full progress-bar" style="width: 0%"></div>
+              </div>
+            `;
+            statusDetails = `<div class="text-sm text-gray-500">Waiting for device to respond...</div>`;
+            actionButtons = `
+              <button class="text-red-500 hover:text-red-700 text-sm flex items-center" onclick="removeDownload('${requestId}')">
+                <i class="fas fa-times mr-1"></i>
+                <span>Cancel</span>
+              </button>
+            `;
             break;
+            
           case 'downloading':
             const bytesText = download.bytesTransferred && download.totalBytes ? 
               `${formatFileSize(download.bytesTransferred)} / ${formatFileSize(download.totalBytes)}` : '';
-            statusText = `Downloading${download.currentFile ? ` (${download.currentFile})` : ''} - ${bytesText}`;
+            statusBadge = `<span class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full flex items-center">
+              <i class="fas fa-spinner fa-spin mr-1"></i>
+              Downloading
+            </span>`;
+            progressBar = `
+              <div class="w-full bg-gray-200 rounded-full h-2 mt-2">
+                <div class="bg-blue-500 h-2 rounded-full progress-bar" style="width: ${download.progress || 0}%"></div>
+              </div>
+            `;
+            statusDetails = `
+              <div class="text-sm text-gray-500">
+                ${download.currentFile ? `File: ${download.currentFile}` : ''}
+                ${bytesText ? `<span class="ml-2">${bytesText}</span>` : ''}
+              </div>
+            `;
+            actionButtons = `
+              <button class="text-red-500 hover:text-red-700 text-sm flex items-center" onclick="removeDownload('${requestId}')">
+                <i class="fas fa-times mr-1"></i>
+                <span>Cancel</span>
+              </button>
+            `;
             break;
+            
           case 'complete':
-            statusText = 'Download complete';
-            statusClass = 'complete';
+            statusBadge = `<span class="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full flex items-center">
+              <i class="fas fa-check mr-1"></i>
+              Complete
+            </span>`;
+            progressBar = `
+              <div class="w-full bg-gray-200 rounded-full h-2 mt-2">
+                <div class="bg-green-500 h-2 rounded-full progress-bar" style="width: 100%"></div>
+              </div>
+            `;
+            statusDetails = `
+              <div class="text-sm text-gray-500">
+                ${download.completionTime ? `Completed ${formatTimeAgo(download.completionTime)}` : ''}
+                ${download.size ? `<span class="ml-2">${formatFileSize(download.size)}</span>` : ''}
+              </div>
+            `;
+            actionButtons = `
+              <a class="text-blue-500 hover:text-blue-700 text-sm flex items-center mr-3" href="${download.downloadType === 'directory' ? 
+                `/downloadDirectory/${download.deviceId}/${download.name}` : 
+                download.downloadPath}" download>
+                <i class="fas fa-download mr-1"></i>
+                <span>Save</span>
+                </a>
+              <button class="text-gray-500 hover:text-gray-700 text-sm flex items-center" onclick="removeDownload('${requestId}')">
+                <i class="fas fa-trash-alt mr-1"></i>
+                <span>Remove</span>
+              </button>
+            `;
             break;
+            
           case 'error':
-            statusText = `Error: ${download.error || 'Unknown error'}`;
-            statusClass = 'error';
+            statusBadge = `<span class="bg-red-100 text-red-800 text-xs px-2 py-1 rounded-full badge-pulse">Error</span>`;
+            progressBar = `
+              <div class="w-full bg-gray-200 rounded-full h-2 mt-2">
+                <div class="bg-red-500 h-2 rounded-full progress-bar" style="width: 100%"></div>
+              </div>
+            `;
+            statusDetails = `<div class="text-sm text-red-500">${download.error || 'Unknown error'}</div>`;
+            actionButtons = `
+              <button class="text-gray-500 hover:text-gray-700 text-sm flex items-center" onclick="removeDownload('${requestId}')">
+                <i class="fas fa-trash-alt mr-1"></i>
+                <span>Remove</span>
+              </button>
+            `;
             break;
         }
         
+        const fileIcon = download.downloadType === 'directory' ? 'fas fa-folder' : getFileIcon(download.fileName);
+        
         el.innerHTML = `
-          <div class="download-info">
-            <div><strong>${download.fileName || download.name || 'Unknown'}</strong> (${download.downloadType})</div>
-            <div class="download-progress">
-              <div class="download-progress-bar" style="width: ${download.progress || 0}%"></div>
+          <div class="p-4">
+            <div class="flex items-center mb-2">
+              <div class="bg-gray-100 w-10 h-10 rounded-lg flex items-center justify-center mr-3">
+                <i class="${fileIcon} ${download.downloadType === 'directory' ? 'text-yellow-500' : ''}"></i>
+              </div>
+              <div class="flex-1">
+                <div class="flex items-center justify-between">
+                  <div class="font-medium text-gray-800 truncate">${download.fileName || download.name || 'Unknown'}</div>
+                  ${statusBadge}
+                </div>
+                <div class="mt-1">
+                  ${statusDetails}
+                </div>
+              </div>
             </div>
-            <div class="download-status ${statusClass}">${statusText}</div>
-          </div>
-          <div class="download-actions">
-            ${download.status === 'complete' ? 
-  `<a class="btn" href="${download.downloadType === 'directory' ? 
-    `/downloadDirectory/${download.deviceId}/${download.name}` : 
-    download.downloadPath}" download>Download</a>` : ''}
-            <button class="btn" onclick="removeDownload('${requestId}')">Remove</button>
+            ${progressBar}
+            <div class="mt-3 flex justify-end">
+              ${actionButtons}
+            </div>
           </div>
         `;
         
@@ -419,44 +712,62 @@
     }
     
     function removeDownload(requestId) {
-    const download = downloads.get(requestId);
-    
-    if (download && download.status === 'complete') {
+      const download = downloads.get(requestId);
+      
+      if (download && download.status === 'complete') {
         // Send request to server to actually delete the file/directory
         fetch('/removeDownload', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                deviceId: download.deviceId,
-                name: download.name,
-                downloadType: download.downloadType
-            })
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            deviceId: download.deviceId,
+            name: download.name,
+            downloadType: download.downloadType
+          })
         })
         .then(response => response.json())
         .then(data => {
-            if (data.success) {
-                downloads.delete(requestId);
-                updateDownloadsList();
-            } else {
-                alert('Failed to remove file: ' + (data.error || 'Unknown error'));
-            }
+          if (data.success) {
+            downloads.delete(requestId);
+            updateDownloadsList();
+            updateDownloadsCounter();
+            showToast('Download removed', 'success');
+          } else {
+            showToast('Failed to remove file: ' + (data.error || 'Unknown error'), 'error');
+          }
         })
         .catch(err => {
-            console.error('Error removing file:', err);
-            alert('Error removing file');
+          console.error('Error removing file:', err);
+          showToast('Error removing file', 'error');
         });
-    } else {
+      } else {
         // Just remove from UI if not complete or if we don't have file info
         downloads.delete(requestId);
         updateDownloadsList();
+        updateDownloadsCounter();
+        
+        if (download.status === 'downloading' || download.status === 'pending') {
+          showToast('Download canceled', 'info');
+        } else {
+          showToast('Download removed', 'success');
+        }
+      }
     }
-}
+    
+    function clearCompletedDownloads() {
+      const completedIds = Array.from(downloads.entries())
+        .filter(([_, download]) => download.status === 'complete' || download.status === 'error')
+        .map(([id, _]) => id);
+        
+      completedIds.forEach(id => removeDownload(id));
+    }
 
     function openFileExplorer(deviceId) {
       currentDeviceId = deviceId;
-      document.getElementById('fileExplorer').style.display = 'block';
+      document.getElementById('fileExplorer').classList.add('active');
+      document.getElementById('explorerDeviceId').textContent = `Device: ${deviceId}`;
 
       // Request root directory listing
       socket.send(JSON.stringify({
@@ -467,8 +778,45 @@
       }));
 
       currentPath = '/';
-      document.getElementById('currentPath').textContent = 'Loading...';
-      document.getElementById('fileList').innerHTML = '<div class="loading">Loading...</div>';
+      updateBreadcrumbs('/');
+      document.getElementById('fileList').innerHTML = `
+        <div class="flex items-center justify-center h-32 bg-gray-50 rounded-lg col-span-full">
+          <div class="flex items-center text-gray-500">
+            <i class="fas fa-spinner fa-spin mr-3"></i>
+            <span>Loading files...</span>
+          </div>
+        </div>
+      `;
+    }
+    
+    function updateBreadcrumbs(path) {
+      const container = document.getElementById('breadcrumbs');
+      container.innerHTML = '';
+      
+      if (path === '/') {
+        container.innerHTML = `<span class="text-gray-600 ml-1">/</span>`;
+        return;
+      }
+      
+      const parts = path.split('/').filter(p => p);
+      let currentPath = '';
+      
+      parts.forEach((part, index) => {
+        currentPath += '/' + part;
+        const isLast = index === parts.length - 1;
+        
+        const breadcrumb = document.createElement('div');
+        breadcrumb.className = 'flex items-center';
+        breadcrumb.innerHTML = `
+          <span class="mx-1 text-gray-400">/</span>
+          ${isLast 
+            ? `<span class="text-gray-800">${part}</span>` 
+            : `<button class="text-blue-500 hover:text-blue-700" onclick="navigateTo('${currentPath}')">${part}</button>`
+          }
+        `;
+        
+        container.appendChild(breadcrumb);
+      });
     }
 
     function navigateTo(path) {
@@ -479,27 +827,172 @@
         path: path
       }));
 
-      document.getElementById('fileList').innerHTML = '<div class="loading">Loading...</div>';
+      document.getElementById('fileList').innerHTML = `
+        <div class="flex items-center justify-center h-32 bg-gray-50 rounded-lg col-span-full">
+          <div class="flex items-center text-gray-500">
+            <i class="fas fa-spinner fa-spin mr-3"></i>
+            <span>Loading files...</span>
+          </div>
+        </div>
+      `;
+    }
+    
+    function updateDownloadsCounter() {
+      const activeCount = Array.from(downloads.values()).filter(
+        d => d.status === 'downloading' || d.status === 'pending'
+      ).length;
+      
+      const counter = document.getElementById('downloadsCounter');
+      
+      if (activeCount > 0) {
+        counter.textContent = activeCount;
+        counter.classList.remove('hidden');
+      } else {
+        counter.classList.add('hidden');
+      }
     }
 
     function formatFileSize(bytes) {
       if (!bytes && bytes !== 0) return 'Unknown size';
-      if (bytes === 0) return '0 Bytes';
+      if (bytes === 0) return '0 B';
       const k = 1024;
-      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+      const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
       const i = Math.floor(Math.log(bytes) / Math.log(k));
       return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
     function formatDate(timestamp) {
       if (!timestamp) return 'Unknown date';
-      return new Date(timestamp).toLocaleString();
+      return dateFormatter.format(new Date(timestamp));
+    }
+    
+    function formatTimeAgo(timestamp) {
+      if (!timestamp) return 'Unknown time';
+      
+      const now = new Date();
+      const date = new Date(timestamp);
+      const seconds = Math.floor((now - date) / 1000);
+      
+      if (seconds < 60) return 'Just now';
+      
+      const minutes = Math.floor(seconds / 60);
+      if (minutes < 60) return `${minutes}m ago`;
+      
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `${hours}h ago`;
+      
+      const days = Math.floor(hours / 24);
+      if (days < 30) return `${days}d ago`;
+      
+      const months = Math.floor(days / 30);
+      if (months < 12) return `${months}mo ago`;
+      
+      return `${Math.floor(months / 12)}y ago`;
+    }
+    
+    function getFileIcon(filename) {
+      if (!filename) return 'fas fa-file text-gray-500';
+      
+      const extension = filename.split('.').pop().toLowerCase();
+      
+      const iconMap = {
+        // Images
+        'jpg': 'fas fa-file-image text-blue-500',
+        'jpeg': 'fas fa-file-image text-blue-500',
+        'png': 'fas fa-file-image text-blue-500',
+        'gif': 'fas fa-file-image text-blue-500',
+        'bmp': 'fas fa-file-image text-blue-500',
+        'svg': 'fas fa-file-image text-blue-500',
+        
+        // Documents
+        'pdf': 'fas fa-file-pdf text-red-500',
+        'doc': 'fas fa-file-word text-blue-700',
+        'docx': 'fas fa-file-word text-blue-700',
+        'txt': 'fas fa-file-alt text-gray-700',
+        'rtf': 'fas fa-file-alt text-gray-700',
+        
+        // Spreadsheets
+        'xls': 'fas fa-file-excel text-green-600',
+        'xlsx': 'fas fa-file-excel text-green-600',
+        'csv': 'fas fa-file-csv text-green-600',
+        
+        // Presentations
+        'ppt': 'fas fa-file-powerpoint text-orange-600',
+        'pptx': 'fas fa-file-powerpoint text-orange-600',
+        
+        // Archives
+        'zip': 'fas fa-file-archive text-yellow-700',
+        'rar': 'fas fa-file-archive text-yellow-700',
+        'tar': 'fas fa-file-archive text-yellow-700',
+        'gz': 'fas fa-file-archive text-yellow-700',
+        '7z': 'fas fa-file-archive text-yellow-700',
+        
+        // Audio
+        'mp3': 'fas fa-file-audio text-purple-500',
+        'wav': 'fas fa-file-audio text-purple-500',
+        'ogg': 'fas fa-file-audio text-purple-500',
+        
+        // Video
+        'mp4': 'fas fa-file-video text-purple-700',
+        'avi': 'fas fa-file-video text-purple-700',
+        'mov': 'fas fa-file-video text-purple-700',
+        'wmv': 'fas fa-file-video text-purple-700',
+        
+        // Code
+        'html': 'fas fa-file-code text-orange-500',
+        'css': 'fas fa-file-code text-blue-500',
+        'js': 'fas fa-file-code text-yellow-500',
+        'java': 'fas fa-file-code text-red-500',
+        'py': 'fas fa-file-code text-blue-800',
+        'php': 'fas fa-file-code text-purple-800',
+        'c': 'fas fa-file-code text-blue-900',
+        'cpp': 'fas fa-file-code text-blue-900',
+        'rb': 'fas fa-file-code text-red-700',
+        'swift': 'fas fa-file-code text-orange-600',
+        'go': 'fas fa-file-code text-blue-500'
+      };
+      
+      return iconMap[extension] || 'fas fa-file text-gray-500';
+    }
+    
+    function showDevicesPanel() {
+      document.getElementById('devicesPanel').classList.remove('hidden');
+      document.getElementById('downloadsPanel').classList.add('hidden');
+      
+      document.getElementById('devicesTab').classList.add('active');
+      document.getElementById('downloadsTab').classList.remove('active');
+    }
+    
+    function showDownloadsPanel() {
+      document.getElementById('devicesPanel').classList.add('hidden');
+      document.getElementById('downloadsPanel').classList.remove('hidden');
+      
+      document.getElementById('devicesTab').classList.remove('active');
+      document.getElementById('downloadsTab').classList.add('active');
     }
 
-    // Close explorer button
+    // Event listeners
     document.getElementById('closeExplorer').addEventListener('click', () => {
-      document.getElementById('fileExplorer').style.display = 'none';
+      document.getElementById('fileExplorer').classList.remove('active');
       currentDeviceId = null;
+    });
+    
+    document.getElementById('devicesTab').addEventListener('click', showDevicesPanel);
+    document.getElementById('downloadsTab').addEventListener('click', showDownloadsPanel);
+    
+    document.getElementById('clearDownloads').addEventListener('click', clearCompletedDownloads);
+    
+    document.getElementById('refreshBtn').addEventListener('click', () => {
+      socket.send(JSON.stringify({ type: 'panelConnect' }));
+      showToast('Refreshing device list...', 'info');
+    });
+    
+    // Close the file explorer when clicking outside of it
+    document.getElementById('fileExplorer').addEventListener('click', (e) => {
+      if (e.target === document.getElementById('fileExplorer')) {
+        document.getElementById('fileExplorer').classList.remove('active');
+        currentDeviceId = null;
+      }
     });
   </script>
 </body>
