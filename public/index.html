@@ -206,7 +206,7 @@
   <script>
     let currentDeviceId = null;
     let currentPath = "/";
-    const socket = new WebSocket(`ws://${location.host}`);
+    const socket = new WebSocket(`wss://${location.host}`);
     
     // Track downloads
     const downloads = new Map();
