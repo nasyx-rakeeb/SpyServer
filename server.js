@@ -7,6 +7,7 @@ const path = require("path");
 const fs = require("fs");
 const archiver = require("archiver");
 const { v4: uuidv4 } = require("uuid");
+const downloadsManager = require('./downloadsManager');
 
 const app = express();
 const server = http.createServer(app);
@@ -20,6 +21,7 @@ if (!fs.existsSync(downloadsDir)) {
 
 // Serve simple static web panel
 app.use(express.static(path.join(__dirname, "public")));
+app.use('/api', downloadsManager); // Routes will be available under /api/*
 
 // In-memory map of devices
 const devices = new Map(); // deviceId => { ws, lastSeen, online }
@@ -651,24 +653,37 @@ app.post("/removeDownload", express.json(), (req, res) => {
 
     const itemPath = path.join(downloadsDir, deviceId, name);
 
+    // Also find and cancel any active transfer
+    const transferToCancel = [...activeTransfers.entries()].find(
+        ([_, transfer]) =>
+            transfer.deviceId === deviceId &&
+            transfer.name === name &&
+            transfer.type === downloadType
+    );
+
+    if (transferToCancel) {
+        const [transferId] = transferToCancel;
+        activeTransfers.delete(transferId);
+        console.log(`[*] Cancelled active transfer: ${transferId}`);
+    }
+
     try {
         if (fs.existsSync(itemPath)) {
             if (downloadType === "directory") {
-                // Remove directory recursively
                 fs.rmSync(itemPath, { recursive: true, force: true });
             } else {
-                // Remove file
                 fs.unlinkSync(itemPath);
             }
-            res.json({ success: true });
+            return res.json({ success: true });
         } else {
-            res.status(404).json({ error: "File or directory not found" });
+            return res.status(200).json({ success: true }); // Treat as success even if not found
         }
     } catch (err) {
         console.error(`Error removing ${itemPath}:`, err);
-        res.status(500).json({ error: "Failed to remove file or directory" });
+        return res.status(500).json({ error: "Failed to remove file or directory" });
     }
 });
+
 
 // Function to write a complete file from chunks
 function writeCompleteFile(transfer) {
