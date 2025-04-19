@@ -717,7 +717,7 @@ setInterval(() => {
     }
 }, 3600000); // Check every hour
 
-const PORT = 3000;
+const PORT = 8080;
 server.listen(PORT, () =>
     console.log(`Backend listening on http://localhost:${PORT}`)
 );
