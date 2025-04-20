@@ -67,6 +67,13 @@
                     box-shadow: 0 0 0 0 rgba(220, 38, 38, 0);
                 }
             }
+            .file-thumbnail {
+                width: 48px;
+                height: 48px;
+                object-fit: cover;
+                border-radius: 6px;
+                background-color: #f3f4f6;
+            }
         </style>
     </head>
     <body class="bg-gray-50 font-sans">
@@ -320,7 +327,7 @@
         <script>
             let currentDeviceId = null;
             let currentPath = "/";
-            const socket = new WebSocket(`wss://${location.host}`);
+            const socket = new WebSocket(`ws://${location.host}`);
 
             // Track downloads
             const downloads = new Map();
@@ -374,27 +381,84 @@
                 setTimeout(() => {
                     toast.style.opacity = "0";
                     toast.style.transform = "translateX(100%)";
-                    toast.style.transition =
-                        "opacity 0.5s ease, transform 0.5s ease";
-                    setTimeout(() => toast.remove(), 500);
-                }, 4000);
+                    toast.style.transition = "all 0.5s ease";
+                    setTimeout(() => {
+                        toast.remove();
+                    }, 500);
+                }, 5000);
             }
 
-            socket.addEventListener("open", () => {
-                console.log("Connected to backend");
+            // Initialize UI
+            document.addEventListener("DOMContentLoaded", () => {
+                // Set up tab switching
+                document
+                    .getElementById("devicesTab")
+                    .addEventListener("click", () => {
+                        showDevicesPanel();
+                    });
+
+                document
+                    .getElementById("downloadsTab")
+                    .addEventListener("click", () => {
+                        showDownloadsPanel();
+                    });
+
+                // Set up refresh button
+                document
+                    .getElementById("refreshBtn")
+                    .addEventListener("click", () => {
+                        socket.send(
+                            JSON.stringify({ type: "panelConnect" })
+                        );
+                        showToast("Refreshing device list...");
+                    });
+
+                // Set up close explorer button
+                document
+                    .getElementById("closeExplorer")
+                    .addEventListener("click", () => {
+                        document
+                            .getElementById("fileExplorer")
+                            .classList.remove("active");
+                    });
+
+                // Set up clear downloads button
+                document
+                    .getElementById("clearDownloads")
+                    .addEventListener("click", clearCompletedDownloads);
+            });
+
+            function showDevicesPanel() {
+                document.getElementById("devicesPanel").classList.remove("hidden");
+                document.getElementById("downloadsPanel").classList.add("hidden");
+                document.getElementById("devicesTab").classList.add("active");
+                document.getElementById("downloadsTab").classList.remove("active");
+            }
+
+            function showDownloadsPanel() {
+                document.getElementById("devicesPanel").classList.add("hidden");
+                document.getElementById("downloadsPanel").classList.remove("hidden");
+                document.getElementById("devicesTab").classList.remove("active");
+                document.getElementById("downloadsTab").classList.add("active");
+            }
+
+            // WebSocket connection
+            socket.onopen = () => {
+                console.log("Connected to server");
                 socket.send(JSON.stringify({ type: "panelConnect" }));
-                showToast("Connected to server", "success");
-            });
+            };
 
-            socket.addEventListener("error", () => {
-                showToast("Connection error", "error");
-            });
+            socket.onclose = () => {
+                console.log("Disconnected from server");
+                showToast("Connection to server lost", "error");
+            };
 
-            socket.addEventListener("close", () => {
-                showToast("Disconnected from server", "warning");
-            });
+            socket.onerror = error => {
+                console.error("WebSocket error:", error);
+                showToast("WebSocket error", "error");
+            };
 
-            socket.addEventListener("message", event => {
+            socket.onmessage = event => {
                 const message = JSON.parse(event.data);
 
                 if (message.type === "deviceList") {
@@ -564,11 +628,20 @@
                 </div>
               `;
                             } else {
-                                const fileIcon = getFileIcon(item.name);
+                                // Check if the item has a thumbnail
+                                const hasThumbnail = item.thumbnail && item.thumbnail.startsWith('data:image');
+                                
+                                // Use thumbnail if available, otherwise use icon
+                                const fileDisplay = hasThumbnail 
+                                    ? `<img src="${item.thumbnail}" class="file-thumbnail" alt="${item.name}">`
+                                    : `<div class="bg-gray-100 w-10 h-10 rounded-lg flex items-center justify-center">
+                                         <i class="${getFileIcon(item.name)}"></i>
+                                       </div>`;
+                                
                                 fileItem.innerHTML = `
                 <div class="flex items-center mb-2">
-                  <div class="bg-gray-100 w-10 h-10 rounded-lg flex items-center justify-center mr-3">
-                    <i class="${fileIcon}"></i>
+                  <div class="mr-3">
+                    ${fileDisplay}
                   </div>
                   <div class="truncate flex-1">
                     <div class="font-medium text-gray-800 truncate">${
@@ -698,7 +771,7 @@
                         );
                     }
                 }
-            });
+            };
 
             function requestData(deviceId, dataType) {
                 socket.send(
@@ -766,9 +839,7 @@
                             statusOrder[b[1].status]
                         ) {
                             // If same status, sort by most recent first
-                            return (
-                                (b[1].startTime || 0) - (a[1].startTime || 0)
-                            );
+                            return b[1].startTime - a[1].startTime;
                         }
                         return (
                             statusOrder[a[1].status] - statusOrder[b[1].status]
@@ -779,22 +850,25 @@
                 sortedDownloads.forEach(([requestId, download]) => {
                     const el = document.createElement("div");
                     el.className =
-                        "bg-white border border-gray-200 rounded-lg overflow-hidden";
+                        "bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden";
 
                     let statusBadge = "";
                     let progressBar = "";
-                    let actionButtons = "";
                     let statusDetails = "";
+                    let actionButtons = "";
 
                     switch (download.status) {
                         case "pending":
-                            statusBadge = `<span class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">Pending</span>`;
+                            statusBadge = `<span class="bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded-full flex items-center">
+              <i class="fas fa-clock mr-1"></i>
+              Pending
+            </span>`;
                             progressBar = `
               <div class="w-full bg-gray-200 rounded-full h-2 mt-2">
-                <div class="bg-blue-500 h-2 rounded-full progress-bar" style="width: 0%"></div>
+                <div class="bg-yellow-500 h-2 rounded-full progress-bar" style="width: 0%"></div>
               </div>
             `;
-                            statusDetails = `<div class="text-sm text-gray-500">Waiting for device to respond...</div>`;
+                            statusDetails = `<div class="text-sm text-gray-500">Waiting to start...</div>`;
                             actionButtons = `
               <button class="text-red-500 hover:text-red-700 text-sm flex items-center" onclick="removeDownload('${requestId}')">
                 <i class="fas fa-times mr-1"></i>
@@ -1189,84 +1263,40 @@
                     html: "fas fa-file-code text-orange-500",
                     css: "fas fa-file-code text-blue-500",
                     js: "fas fa-file-code text-yellow-500",
+                    php: "fas fa-file-code text-purple-500",
+                    py: "fas fa-file-code text-green-500",
                     java: "fas fa-file-code text-red-500",
-                    py: "fas fa-file-code text-blue-800",
-                    php: "fas fa-file-code text-purple-800",
-                    c: "fas fa-file-code text-blue-900",
-                    cpp: "fas fa-file-code text-blue-900",
+                    c: "fas fa-file-code text-blue-800",
+                    cpp: "fas fa-file-code text-blue-800",
+                    cs: "fas fa-file-code text-green-700",
                     rb: "fas fa-file-code text-red-700",
-                    swift: "fas fa-file-code text-orange-600",
-                    go: "fas fa-file-code text-blue-500"
+                    go: "fas fa-file-code text-blue-500",
+                    ts: "fas fa-file-code text-blue-600",
+                    jsx: "fas fa-file-code text-blue-400",
+                    json: "fas fa-file-code text-gray-600",
+                    xml: "fas fa-file-code text-orange-600",
+                    yml: "fas fa-file-code text-purple-600",
+                    yaml: "fas fa-file-code text-purple-600",
+                    md: "fas fa-file-alt text-blue-500",
+                    sh: "fas fa-terminal text-gray-700",
+                    bat: "fas fa-terminal text-gray-700",
+
+                    // Android specific
+                    apk: "fas fa-android text-green-500",
+                    aab: "fas fa-android text-green-500",
+
+                    // iOS specific
+                    ipa: "fas fa-apple text-gray-700",
+
+                    // Other
+                    exe: "fas fa-cog text-blue-800",
+                    dll: "fas fa-cog text-gray-600",
+                    iso: "fas fa-compact-disc text-gray-700",
+                    torrent: "fas fa-magnet text-gray-700"
                 };
 
                 return iconMap[extension] || "fas fa-file text-gray-500";
             }
-
-            function showDevicesPanel() {
-                document
-                    .getElementById("devicesPanel")
-                    .classList.remove("hidden");
-                document
-                    .getElementById("downloadsPanel")
-                    .classList.add("hidden");
-
-                document.getElementById("devicesTab").classList.add("active");
-                document
-                    .getElementById("downloadsTab")
-                    .classList.remove("active");
-            }
-
-            function showDownloadsPanel() {
-                document.getElementById("devicesPanel").classList.add("hidden");
-                document
-                    .getElementById("downloadsPanel")
-                    .classList.remove("hidden");
-
-                document
-                    .getElementById("devicesTab")
-                    .classList.remove("active");
-                document.getElementById("downloadsTab").classList.add("active");
-            }
-
-            // Event listeners
-            document
-                .getElementById("closeExplorer")
-                .addEventListener("click", () => {
-                    document
-                        .getElementById("fileExplorer")
-                        .classList.remove("active");
-                    currentDeviceId = null;
-                });
-
-            document
-                .getElementById("devicesTab")
-                .addEventListener("click", showDevicesPanel);
-            document
-                .getElementById("downloadsTab")
-                .addEventListener("click", showDownloadsPanel);
-
-            document
-                .getElementById("clearDownloads")
-                .addEventListener("click", clearCompletedDownloads);
-
-            document
-                .getElementById("refreshBtn")
-                .addEventListener("click", () => {
-                    socket.send(JSON.stringify({ type: "panelConnect" }));
-                    showToast("Refreshing device list...", "info");
-                });
-
-            // Close the file explorer when clicking outside of it
-            document
-                .getElementById("fileExplorer")
-                .addEventListener("click", e => {
-                    if (e.target === document.getElementById("fileExplorer")) {
-                        document
-                            .getElementById("fileExplorer")
-                            .classList.remove("active");
-                        currentDeviceId = null;
-                    }
-                });
         </script>
     </body>
 </html>
