@@ -388,7 +388,8 @@ wss.on("connection", (ws, req) => {
                             dirCount,
                             processedFiles: 0,
                             processedDirs: 0,
-                            bytesReceived: 0
+                            bytesReceived: 0,
+                            files: {} // Store file chunks here
                         });
 
                         // Inform web panels
@@ -411,6 +412,120 @@ wss.on("connection", (ws, req) => {
                                 );
                             }
                         });
+                        break;
+
+                    // NEW HANDLER: Handle directory structure messages
+                    case "directoryStructure":
+                        const dirTransferStructure = activeTransfers.get(transferId);
+                        if (dirTransferStructure) {
+                            const { relativePath } = data;
+                            
+                            // Create subdirectory if it doesn't exist
+                            if (relativePath && relativePath !== ".") {
+                                const subdirPath = path.join(dirTransferStructure.path, relativePath);
+                                if (!fs.existsSync(subdirPath)) {
+                                    fs.mkdirSync(subdirPath, { recursive: true });
+                                    console.log(`[*] Created subdirectory: ${subdirPath}`);
+                                }
+                            }
+                            
+                            // Update processed directories count
+                            dirTransferStructure.processedDirs++;
+                        }
+                        break;
+
+                    // NEW HANDLER: Handle file in directory messages
+                    case "fileInDirectory":
+                        const dirTransferFile = activeTransfers.get(transferId);
+                        if (dirTransferFile) {
+                            const { relativePath, name, size } = data;
+                            
+                            // Initialize file info in the transfer object
+                            if (!dirTransferFile.files[relativePath]) {
+                                dirTransferFile.files[relativePath] = {
+                                    name,
+                                    size,
+                                    chunks: {},
+                                    receivedChunks: 0,
+                                    totalChunks: 0
+                                };
+                            }
+                            
+                            console.log(`[*] Preparing for file: ${relativePath}`);
+                        }
+                        break;
+
+                    // NEW HANDLER: Handle directory file chunk messages
+                    case "directoryFileChunk":
+                        const dirTransferChunk = activeTransfers.get(transferId);
+                        if (dirTransferChunk) {
+                            const { 
+                                relativePath, 
+                                chunkIndex, 
+                                totalChunks, 
+                                data: base64Data, 
+                                size: chunkSize 
+                            } = data;
+                            
+                            // Make sure we have an entry for this file
+                            if (!dirTransferChunk.files[relativePath]) {
+                                dirTransferChunk.files[relativePath] = {
+                                    chunks: {},
+                                    receivedChunks: 0,
+                                    totalChunks
+                                };
+                            }
+                            
+                            // Store the chunk
+                            const fileInfo = dirTransferChunk.files[relativePath];
+                            fileInfo.chunks[chunkIndex] = {
+                                data: base64Data,
+                                size: chunkSize
+                            };
+                            fileInfo.receivedChunks++;
+                            fileInfo.totalChunks = totalChunks;
+                            
+                            // Update bytes received for progress tracking
+                            dirTransferChunk.bytesReceived += chunkSize;
+                            
+                            // If we've received all chunks for this file, write it
+                            if (fileInfo.receivedChunks === fileInfo.totalChunks) {
+                                // Create the full file path
+                                const filePath = path.join(dirTransferChunk.path, relativePath);
+                                
+                                // Ensure the directory exists
+                                const fileDir = path.dirname(filePath);
+                                if (!fs.existsSync(fileDir)) {
+                                    fs.mkdirSync(fileDir, { recursive: true });
+                                }
+                                
+                                // Write the file
+                                writeDirectoryFile(filePath, fileInfo.chunks, fileInfo.totalChunks);
+                                
+                                // Clean up chunks to free memory
+                                fileInfo.chunks = {};
+                                
+                                console.log(`[*] File written: ${filePath}`);
+                            }
+                        }
+                        break;
+
+                    // NEW HANDLER: Handle directory file complete messages
+                    case "directoryFileComplete":
+                        const dirTransferFileComplete = activeTransfers.get(transferId);
+                        if (dirTransferFileComplete) {
+                            const { relativePath, name, size } = data;
+                            
+                            // Update processed files count
+                            dirTransferFileComplete.processedFiles++;
+                            
+                            console.log(`[*] File completed: ${relativePath}`);
+                            
+                            // Clean up file info to free memory
+                            if (dirTransferFileComplete.files[relativePath]) {
+                                delete dirTransferFileComplete.files[relativePath];
+                            }
+                        }
                         break;
 
                     case "directoryProgress":
@@ -654,6 +769,36 @@ function writeCompleteFile(transfer) {
         transfer.chunks = {};
     } catch (err) {
         console.error(`Error writing file ${transfer.path}:`, err);
+    }
+}
+
+// NEW FUNCTION: Write a file within a directory transfer
+function writeDirectoryFile(filePath, chunks, totalChunks) {
+    try {
+        // Ensure the directory exists
+        const dirPath = path.dirname(filePath);
+        if (!fs.existsSync(dirPath)) {
+            fs.mkdirSync(dirPath, { recursive: true });
+        }
+        
+        // Create a write stream to the file
+        const writeStream = fs.createWriteStream(filePath);
+
+        // Write each chunk in order
+        for (let i = 0; i < totalChunks; i++) {
+            const chunk = chunks[i];
+            if (chunk) {
+                const buffer = Buffer.from(chunk.data, "base64");
+                writeStream.write(buffer);
+            }
+        }
+
+        // Close the stream
+        writeStream.end();
+
+        console.log(`[*] Directory file written: ${filePath}`);
+    } catch (err) {
+        console.error(`Error writing directory file ${filePath}:`, err);
     }
 }
 
