@@ -7,15 +7,11 @@ const path = require("path");
 const fs = require("fs");
 const archiver = require("archiver");
 const { v4: uuidv4 } = require("uuid");
-const downloadsManager = require('./downloadsManager');
+const downloadsManager = require("./downloadsManager");
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ 
-    server,
-    // Increase the maximum allowed message size to accommodate thumbnails
-    maxPayload: 50 * 1024 * 1024 // 50MB max payload size
-});
+const wss = new WebSocket.Server({ server });
 
 // Create downloads directory if it doesn't exist
 const downloadsDir = path.join(__dirname, "public", "downloads");
@@ -25,7 +21,18 @@ if (!fs.existsSync(downloadsDir)) {
 
 // Serve simple static web panel
 app.use(express.static(path.join(__dirname, "public")));
-app.use('/api', downloadsManager); // Routes will be available under /api/*
+app.use("/api", downloadsManager); // Routes will be available under /api/*
+
+app.get("/downloads/:deviceId/:filename", (req, res) => {
+    const { deviceId, filename } = req.params;
+    const filePath = path.join(downloadsDir, deviceId, filename);
+
+    if (!fs.existsSync(filePath)) {
+        return res.status(404).send("File not found");
+    }
+
+    res.sendFile(filePath);
+});
 
 // In-memory map of devices
 const devices = new Map(); // deviceId => { ws, lastSeen, online }
@@ -86,17 +93,42 @@ wss.on("connection", (ws, req) => {
                 broadcastDeviceList();
             }
 
-            // Heartbeat update
             if (data.type === "heartbeat") {
-                const { deviceId } = data;
-                if (devices.has(deviceId)) {
-                    const existing = devices.get(deviceId);
-                    existing.lastSeen = new Date().toISOString();
-                    existing.online = true;
-                    devices.set(deviceId, existing);
-                    broadcastDeviceList();
-                }
-            }
+              console.log("HR")
+    const { deviceId } = data;
+    if (devices.has(deviceId)) {
+        const existing = devices.get(deviceId);
+        existing.lastSeen = new Date().toISOString();
+        existing.online = true;
+        devices.set(deviceId, existing);
+        
+        // Send heartbeat response back to the device immediately
+        if (existing.ws && existing.ws.readyState === WebSocket.OPEN) {
+            existing.ws.send(
+                JSON.stringify({
+                    type: "heartbeatResponse",
+                    timestamp: Date.now()
+                })
+            );
+            console.log(`[*] Sent heartbeat response to device: ${deviceId}`);
+        } else {
+            console.warn(`[!] Cannot send heartbeat response - WebSocket not open for device: ${deviceId}`);
+        }
+        
+        broadcastDeviceList();
+    } else {
+        console.warn(`[!] Received heartbeat from unknown device: ${deviceId}`);
+        
+        // If we don't recognize the device, ask it to reconnect
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(
+                JSON.stringify({
+                    type: "reconnectRequest",
+                    message: "Device not recognized, please reconnect"
+                })
+            );
+        }
+    }}
 
             // Panel connected
             if (data.type === "panelConnect") {
@@ -388,8 +420,7 @@ wss.on("connection", (ws, req) => {
                             dirCount,
                             processedFiles: 0,
                             processedDirs: 0,
-                            bytesReceived: 0,
-                            files: {} // Store file chunks here
+                            bytesReceived: 0
                         });
 
                         // Inform web panels
@@ -406,6 +437,8 @@ wss.on("connection", (ws, req) => {
                                         transferId,
                                         name: dirName,
                                         size: totalSize,
+                                        fileCount,
+                                        dirCount,
                                         progress: 0,
                                         status: "downloading"
                                     })
@@ -414,143 +447,86 @@ wss.on("connection", (ws, req) => {
                         });
                         break;
 
-                    // NEW HANDLER: Handle directory structure messages
                     case "directoryStructure":
-                        const dirTransferStructure = activeTransfers.get(transferId);
-                        if (dirTransferStructure) {
-                            const { relativePath } = data;
-                            
-                            // Create subdirectory if it doesn't exist
-                            if (relativePath && relativePath !== ".") {
-                                const subdirPath = path.join(dirTransferStructure.path, relativePath);
-                                if (!fs.existsSync(subdirPath)) {
-                                    fs.mkdirSync(subdirPath, { recursive: true });
-                                    console.log(`[*] Created subdirectory: ${subdirPath}`);
-                                }
-                            }
-                            
-                            // Update processed directories count
-                            dirTransferStructure.processedDirs++;
-                        }
-                        break;
-
-                    // NEW HANDLER: Handle file in directory messages
-                    case "fileInDirectory":
-                        const dirTransferFile = activeTransfers.get(transferId);
-                        if (dirTransferFile) {
-                            const { relativePath, name, size } = data;
-                            
-                            // Initialize file info in the transfer object
-                            if (!dirTransferFile.files[relativePath]) {
-                                dirTransferFile.files[relativePath] = {
-                                    name,
-                                    size,
-                                    chunks: {},
-                                    receivedChunks: 0,
-                                    totalChunks: 0
-                                };
-                            }
-                            
-                            console.log(`[*] Preparing for file: ${relativePath}`);
-                        }
-                        break;
-
-                    // NEW HANDLER: Handle directory file chunk messages
-                    case "directoryFileChunk":
-                        const dirTransferChunk = activeTransfers.get(transferId);
-                        if (dirTransferChunk) {
-                            const { 
-                                relativePath, 
-                                chunkIndex, 
-                                totalChunks, 
-                                data: base64Data, 
-                                size: chunkSize 
-                            } = data;
-                            
-                            // Make sure we have an entry for this file
-                            if (!dirTransferChunk.files[relativePath]) {
-                                dirTransferChunk.files[relativePath] = {
-                                    chunks: {},
-                                    receivedChunks: 0,
-                                    totalChunks
-                                };
-                            }
-                            
-                            // Store the chunk
-                            const fileInfo = dirTransferChunk.files[relativePath];
-                            fileInfo.chunks[chunkIndex] = {
-                                data: base64Data,
-                                size: chunkSize
-                            };
-                            fileInfo.receivedChunks++;
-                            fileInfo.totalChunks = totalChunks;
-                            
-                            // Update bytes received for progress tracking
-                            dirTransferChunk.bytesReceived += chunkSize;
-                            
-                            // If we've received all chunks for this file, write it
-                            if (fileInfo.receivedChunks === fileInfo.totalChunks) {
-                                // Create the full file path
-                                const filePath = path.join(dirTransferChunk.path, relativePath);
-                                
-                                // Ensure the directory exists
-                                const fileDir = path.dirname(filePath);
-                                if (!fs.existsSync(fileDir)) {
-                                    fs.mkdirSync(fileDir, { recursive: true });
-                                }
-                                
-                                // Write the file
-                                writeDirectoryFile(filePath, fileInfo.chunks, fileInfo.totalChunks);
-                                
-                                // Clean up chunks to free memory
-                                fileInfo.chunks = {};
-                                
-                                console.log(`[*] File written: ${filePath}`);
-                            }
-                        }
-                        break;
-
-                    // NEW HANDLER: Handle directory file complete messages
-                    case "directoryFileComplete":
-                        const dirTransferFileComplete = activeTransfers.get(transferId);
-                        if (dirTransferFileComplete) {
-                            const { relativePath, name, size } = data;
-                            
-                            // Update processed files count
-                            dirTransferFileComplete.processedFiles++;
-                            
-                            console.log(`[*] File completed: ${relativePath}`);
-                            
-                            // Clean up file info to free memory
-                            if (dirTransferFileComplete.files[relativePath]) {
-                                delete dirTransferFileComplete.files[relativePath];
-                            }
-                        }
-                        break;
-
-                    case "directoryProgress":
-                        // Update directory download progress
+                        // Create subdirectory
+                        const { relativePath } = data;
                         const dirTransfer = activeTransfers.get(transferId);
+
                         if (dirTransfer) {
-                            const {
-                                processedFiles,
-                                processedDirs,
-                                bytesReceived
-                            } = data;
-
-                            dirTransfer.processedFiles = processedFiles;
-                            dirTransfer.processedDirs = processedDirs;
-                            dirTransfer.bytesReceived = bytesReceived;
-
-                            // Calculate progress percentage
-                            let dirProgress = 0;
-                            if (dirTransfer.fileCount > 0) {
-                                dirProgress =
-                                    (processedFiles / dirTransfer.fileCount) *
-                                    100;
+                            const subdirPath = path.join(
+                                dirTransfer.path,
+                                relativePath
+                            );
+                            if (
+                                !fs.existsSync(subdirPath) &&
+                                relativePath !== "."
+                            ) {
+                                fs.mkdirSync(subdirPath, { recursive: true });
                             }
 
-                            // Inform web panels
+                            // Update directory count
+                            dirTransfer.processedDirs++;
+                        }
+                        break;
+
+                    case "fileInDirectory":
+                        // File metadata in directory, no action needed here
+                        // Just track it for progress reporting
+                        break;
+
+                    case "directoryFileChunk":
+                        // Process a file chunk within a directory
+                        const {
+                            relativePath: filePath,
+                            chunkIndex: dirFileChunkIndex,
+                            data: dirFileData,
+                            size: dirFileChunkSize
+                        } = data;
+
+                        const dirFileTransfer = activeTransfers.get(transferId);
+
+                        if (dirFileTransfer) {
+                            // Create path to the file
+                            const fileFullPath = path.join(
+                                dirFileTransfer.path,
+                                filePath
+                            );
+                            const fileDir = path.dirname(fileFullPath);
+
+                            // Ensure directory exists
+                            if (!fs.existsSync(fileDir)) {
+                                fs.mkdirSync(fileDir, { recursive: true });
+                            }
+
+                            // Write chunk to file
+                            const buffer = Buffer.from(dirFileData, "base64");
+
+                            // If first chunk, create or overwrite the file
+                            const flag = dirFileChunkIndex === 0 ? "w" : "a";
+
+                            fs.writeFileSync(fileFullPath, buffer, { flag });
+
+                            // Update bytes received
+                            dirFileTransfer.bytesReceived += dirFileChunkSize;
+                        }
+                        break;
+
+                    case "directoryFileComplete":
+                        // A file in the directory transfer is complete
+                        const dirCompletedTransfer =
+                            activeTransfers.get(transferId);
+
+                        if (dirCompletedTransfer) {
+                            // Update file count
+                            dirCompletedTransfer.processedFiles++;
+
+                            // Calculate overall progress
+                            const dirProgress =
+                                (dirCompletedTransfer.bytesReceived /
+                                    dirCompletedTransfer.totalSize) *
+                                100;
+
+                            // Update web panels
                             wss.clients.forEach(client => {
                                 if (
                                     client.isPanel &&
@@ -564,13 +540,13 @@ wss.on("connection", (ws, req) => {
                                             transferId,
                                             progress: Math.floor(dirProgress),
                                             bytesTransferred:
-                                                dirTransfer.bytesReceived,
+                                                dirCompletedTransfer.bytesReceived,
                                             totalBytes:
-                                                dirTransfer.totalSize,
+                                                dirCompletedTransfer.totalSize,
                                             processedFiles:
-                                                dirTransfer.processedFiles,
+                                                dirCompletedTransfer.processedFiles,
                                             totalFiles:
-                                                dirTransfer.fileCount,
+                                                dirCompletedTransfer.fileCount,
                                             status: "downloading"
                                         })
                                     );
@@ -740,10 +716,11 @@ app.post("/removeDownload", express.json(), (req, res) => {
         }
     } catch (err) {
         console.error(`Error removing ${itemPath}:`, err);
-        return res.status(500).json({ error: "Failed to remove file or directory" });
+        return res
+            .status(500)
+            .json({ error: "Failed to remove file or directory" });
     }
 });
-
 
 // Function to write a complete file from chunks
 function writeCompleteFile(transfer) {
@@ -769,36 +746,6 @@ function writeCompleteFile(transfer) {
         transfer.chunks = {};
     } catch (err) {
         console.error(`Error writing file ${transfer.path}:`, err);
-    }
-}
-
-// NEW FUNCTION: Write a file within a directory transfer
-function writeDirectoryFile(filePath, chunks, totalChunks) {
-    try {
-        // Ensure the directory exists
-        const dirPath = path.dirname(filePath);
-        if (!fs.existsSync(dirPath)) {
-            fs.mkdirSync(dirPath, { recursive: true });
-        }
-        
-        // Create a write stream to the file
-        const writeStream = fs.createWriteStream(filePath);
-
-        // Write each chunk in order
-        for (let i = 0; i < totalChunks; i++) {
-            const chunk = chunks[i];
-            if (chunk) {
-                const buffer = Buffer.from(chunk.data, "base64");
-                writeStream.write(buffer);
-            }
-        }
-
-        // Close the stream
-        writeStream.end();
-
-        console.log(`[*] Directory file written: ${filePath}`);
-    } catch (err) {
-        console.error(`Error writing directory file ${filePath}:`, err);
     }
 }
 
