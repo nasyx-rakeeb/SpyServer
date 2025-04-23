@@ -344,7 +344,6 @@ wss.on("connection", (ws, req) => {
                     case "chunk":
                         const {
                             chunkIndex,
-                            totalChunks,
                             data: base64Data,
                             size: chunkSize
                         } = data;
@@ -361,7 +360,7 @@ wss.on("connection", (ws, req) => {
                             // Send progress update after every 5 chunks or when it's the last chunk
                             if (
                                 chunkIndex % 5 === 0 ||
-                                chunkIndex === totalChunks - 1
+                                chunkIndex === data.totalChunks - 1
                             ) {
                                 updateFileTransferProgress(
                                     transferId,
