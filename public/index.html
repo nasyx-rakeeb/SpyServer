@@ -327,7 +327,7 @@
         <script>
             let currentDeviceId = null;
             let currentPath = "/";
-            const socket = new WebSocket(`ws://${location.host}`);
+            const socket = new WebSocket(`wss://${location.host}`);
 
             // Track downloads
             const downloads = new Map();
@@ -407,9 +407,7 @@
                 document
                     .getElementById("refreshBtn")
                     .addEventListener("click", () => {
-                        socket.send(
-                            JSON.stringify({ type: "panelConnect" })
-                        );
+                        socket.send(JSON.stringify({ type: "panelConnect" }));
                         showToast("Refreshing device list...");
                     });
 
@@ -429,16 +427,26 @@
             });
 
             function showDevicesPanel() {
-                document.getElementById("devicesPanel").classList.remove("hidden");
-                document.getElementById("downloadsPanel").classList.add("hidden");
+                document
+                    .getElementById("devicesPanel")
+                    .classList.remove("hidden");
+                document
+                    .getElementById("downloadsPanel")
+                    .classList.add("hidden");
                 document.getElementById("devicesTab").classList.add("active");
-                document.getElementById("downloadsTab").classList.remove("active");
+                document
+                    .getElementById("downloadsTab")
+                    .classList.remove("active");
             }
 
             function showDownloadsPanel() {
                 document.getElementById("devicesPanel").classList.add("hidden");
-                document.getElementById("downloadsPanel").classList.remove("hidden");
-                document.getElementById("devicesTab").classList.remove("active");
+                document
+                    .getElementById("downloadsPanel")
+                    .classList.remove("hidden");
+                document
+                    .getElementById("devicesTab")
+                    .classList.remove("active");
                 document.getElementById("downloadsTab").classList.add("active");
             }
 
@@ -576,7 +584,17 @@
                 }
 
                 if (message.type === "fileExplorerResponse") {
-                    const { deviceId, action, path, items, error } = message;
+                    const {
+                        deviceId,
+                        action,
+                        path,
+                        items,
+                        error,
+                        totalItems,
+                        page,
+                        pageSize,
+                        hasMore
+                    } = message;
 
                     // Only process if this is for the current device
                     if (deviceId !== currentDeviceId) return;
@@ -602,77 +620,153 @@
 
                             if (item.type === "directory") {
                                 fileItem.innerHTML = `
-                <div class="flex items-center mb-2 cursor-pointer" onclick="navigateTo('${
-                    item.path
-                }')">
-                  <div class="bg-yellow-100 w-10 h-10 rounded-lg flex items-center justify-center mr-3">
-                    <i class="fas fa-folder text-yellow-500"></i>
-                  </div>
-                  <div class="truncate flex-1">
-                    <div class="font-medium text-gray-800 truncate">${
-                        item.name
-                    }</div>
-                    <div class="text-xs text-gray-500">${formatDate(
-                        item.lastModified
-                    )}</div>
-                  </div>
-                </div>
-                <div class="mt-auto pt-2 border-t flex justify-end">
-                  <button class="text-blue-500 hover:text-blue-700 text-sm flex items-center"
-                          onclick="downloadItem('${
-                              item.path
-                          }', 'directory'); event.stopPropagation();">
-                    <i class="fas fa-download mr-1"></i>
-                    <span>Download</span>
-                  </button>
-                </div>
-              `;
+                    <div class="flex items-center mb-2 cursor-pointer" onclick="navigateTo('${
+                        item.path
+                    }')">
+                        <div class="bg-yellow-100 w-10 h-10 rounded-lg flex items-center justify-center mr-3">
+                            <i class="fas fa-folder text-yellow-500"></i>
+                        </div>
+                        <div class="truncate flex-1">
+                            <div class="font-medium text-gray-800 truncate">${
+                                item.name
+                            }</div>
+                            <div class="text-xs text-gray-500">${formatDate(
+                                item.lastModified
+                            )}</div>
+                        </div>
+                    </div>
+                    <div class="mt-auto pt-2 border-t flex justify-end">
+                        <button class="text-blue-500 hover:text-blue-700 text-sm flex items-center"
+                                onclick="downloadItem('${
+                                    item.path
+                                }', 'directory'); event.stopPropagation();">
+                            <i class="fas fa-download mr-1"></i>
+                            <span>Download</span>
+                        </button>
+                    </div>
+                `;
                             } else {
                                 // Check if the item has a thumbnail
-                                const hasThumbnail = item.thumbnail && item.thumbnail.startsWith('data:image');
-                                
+                                const hasThumbnail =
+                                    item.thumbnail &&
+                                    item.thumbnail.startsWith("data:image");
+
                                 // Use thumbnail if available, otherwise use icon
-                                const fileDisplay = hasThumbnail 
+                                const fileDisplay = hasThumbnail
                                     ? `<img src="${item.thumbnail}" class="file-thumbnail" alt="${item.name}">`
                                     : `<div class="bg-gray-100 w-10 h-10 rounded-lg flex items-center justify-center">
-                                         <i class="${getFileIcon(item.name)}"></i>
-                                       </div>`;
-                                
+                            <i class="${getFileIcon(item.name)}"></i>
+                        </div>`;
+
                                 fileItem.innerHTML = `
-                <div class="flex items-center mb-2">
-                  <div class="mr-3">
-                    ${fileDisplay}
-                  </div>
-                  <div class="truncate flex-1">
-                    <div class="font-medium text-gray-800 truncate">${
-                        item.name
-                    }</div>
-                    <div class="text-xs text-gray-500">${formatFileSize(
-                        item.size
-                    )} · ${formatDate(item.lastModified)}</div>
-                  </div>
-                </div>
-                <div class="mt-auto pt-2 border-t flex justify-end">
-                  <button class="text-blue-500 hover:text-blue-700 text-sm flex items-center"
-                          onclick="downloadItem('${
-                              item.path
-                          }', 'file'); event.stopPropagation();">
-                    <i class="fas fa-download mr-1"></i>
-                    <span>Download</span>
-                  </button>
-                </div>
-              `;
+                    <div class="flex items-center mb-2">
+                        <div class="mr-3">
+                            ${fileDisplay}
+                        </div>
+                        <div class="truncate flex-1">
+                            <div class="font-medium text-gray-800 truncate">${
+                                item.name
+                            }</div>
+                            <div class="text-xs text-gray-500">${formatFileSize(
+                                item.size
+                            )} · ${formatDate(item.lastModified)}</div>
+                        </div>
+                    </div>
+                    <div class="mt-auto pt-2 border-t flex justify-end">
+                        <button class="text-blue-500 hover:text-blue-700 text-sm flex items-center"
+                                onclick="downloadItem('${
+                                    item.path
+                                }', 'file'); event.stopPropagation();">
+                            <i class="fas fa-download mr-1"></i>
+                            <span>Download</span>
+                        </button>
+                    </div>
+                `;
                             }
 
                             fileList.appendChild(fileItem);
                         });
+
+                        // Add pagination controls if we have pagination data
+                        if (totalItems > 0 && pageSize > 0) {
+                            const totalPages = Math.ceil(totalItems / pageSize);
+                            if (totalPages > 1) {
+                                const paginationDiv =
+                                    document.createElement("div");
+                                paginationDiv.className =
+                                    "flex justify-center mt-4 space-x-2 col-span-full";
+
+                                // Create previous page button
+                                const prevButton =
+                                    document.createElement("button");
+                                prevButton.className = `px-3 py-1 rounded bg-gray-200 text-gray-700 ${
+                                    page === 1
+                                        ? "opacity-50 cursor-not-allowed"
+                                        : "hover:bg-gray-300"
+                                }`;
+                                prevButton.disabled = page === 1;
+                                prevButton.innerHTML =
+                                    '<i class="fas fa-chevron-left"></i>';
+                                if (page > 1) {
+                                    prevButton.addEventListener(
+                                        "click",
+                                        function () {
+                                            loadDirectoryPage(
+                                                path,
+                                                page - 1,
+                                                pageSize
+                                            );
+                                        }
+                                    );
+                                }
+
+                                // Create page indicator
+                                const pageIndicator =
+                                    document.createElement("span");
+                                pageIndicator.className =
+                                    "px-3 py-1 rounded bg-blue-500 text-white";
+                                pageIndicator.textContent = `${page} / ${totalPages}`;
+
+                                // Create next page button
+                                const nextButton =
+                                    document.createElement("button");
+                                nextButton.className = `px-3 py-1 rounded bg-gray-200 text-gray-700 ${
+                                    page === totalPages || !hasMore
+                                        ? "opacity-50 cursor-not-allowed"
+                                        : "hover:bg-gray-300"
+                                }`;
+                                nextButton.disabled =
+                                    page === totalPages || !hasMore;
+                                nextButton.innerHTML =
+                                    '<i class="fas fa-chevron-right"></i>';
+                                if (page < totalPages && hasMore) {
+                                    nextButton.addEventListener(
+                                        "click",
+                                        function () {
+                                            loadDirectoryPage(
+                                                path,
+                                                page + 1,
+                                                pageSize
+                                            );
+                                        }
+                                    );
+                                }
+
+                                // Add buttons to pagination div
+                                paginationDiv.appendChild(prevButton);
+                                paginationDiv.appendChild(pageIndicator);
+                                paginationDiv.appendChild(nextButton);
+
+                                fileList.appendChild(paginationDiv);
+                            }
+                        }
                     } else {
                         fileList.innerHTML = `
             <div class="flex flex-col items-center justify-center h-32 bg-gray-50 rounded-lg col-span-full">
-              <i class="fas fa-folder-open text-gray-300 text-4xl mb-2"></i>
-              <div class="text-gray-500">Empty folder</div>
+                <i class="fas fa-folder-open text-gray-300 text-4xl mb-2"></i>
+                <div class="text-gray-500">Empty folder</div>
             </div>
-          `;
+        `;
                     }
                 }
 
@@ -1135,23 +1229,64 @@
             }
 
             function navigateTo(path) {
-                socket.send(
-                    JSON.stringify({
-                        type: "fileExplorer",
-                        targetId: currentDeviceId,
-                        action: "listDirectory",
-                        path: path
-                    })
-                );
+                loadDirectoryPage(path);
+                updateBreadcrumbs(path);
+            }
 
-                document.getElementById("fileList").innerHTML = `
-        <div class="flex items-center justify-center h-32 bg-gray-50 rounded-lg col-span-full">
-          <div class="flex items-center text-gray-500">
-            <i class="fas fa-spinner fa-spin mr-3"></i>
-            <span>Loading files...</span>
-          </div>
+            // Add pagination controls to the file explorer
+            function renderPaginationControls(
+                path,
+                currentPage,
+                totalItems,
+                pageSize
+            ) {
+                const totalPages = Math.ceil(totalItems / pageSize);
+
+                if (totalPages <= 1) {
+                    return ""; // No pagination needed
+                }
+
+                let paginationHtml = `
+        <div class="flex justify-center mt-4 space-x-2">
+            <button 
+                class="px-3 py-1 rounded bg-gray-200 text-gray-700 ${
+                    currentPage === 1
+                        ? "opacity-50 cursor-not-allowed"
+                        : "hover:bg-gray-300"
+                }"
+                ${
+                    currentPage === 1
+                        ? "disabled"
+                        : `onclick="loadDirectoryPage('${path}', ${
+                              currentPage - 1
+                          }, ${pageSize})"`
+                }
+            >
+                <i class="fas fa-chevron-left"></i>
+            </button>
+            <span class="px-3 py-1 rounded bg-blue-500 text-white">
+                ${currentPage} / ${totalPages}
+            </span>
+            <button 
+                class="px-3 py-1 rounded bg-gray-200 text-gray-700 ${
+                    currentPage === totalPages
+                        ? "opacity-50 cursor-not-allowed"
+                        : "hover:bg-gray-300"
+                }"
+                ${
+                    currentPage === totalPages
+                        ? "disabled"
+                        : `onclick="loadDirectoryPage('${path}', ${
+                              currentPage + 1
+                          }, ${pageSize})"`
+                }
+            >
+                <i class="fas fa-chevron-right"></i>
+            </button>
         </div>
-      `;
+    `;
+
+                return paginationHtml;
             }
 
             function updateDownloadsCounter() {
@@ -1296,6 +1431,31 @@
                 };
 
                 return iconMap[extension] || "fas fa-file text-gray-500";
+            }
+            function loadDirectoryPage(path, page = 1, pageSize = 50) {
+                currentPath = path;
+
+                // Show loading state
+                document.getElementById("fileList").innerHTML = `
+        <div class="flex items-center justify-center h-32 bg-gray-50 rounded-lg col-span-full">
+            <div class="flex items-center text-gray-500">
+                <i class="fas fa-spinner fa-spin mr-3"></i>
+                <span>Loading files...</span>
+            </div>
+        </div>
+    `;
+
+                // Request directory listing with pagination
+                const message = {
+                    type: "fileExplorer",
+                    targetId: currentDeviceId,
+                    action: "listDirectory",
+                    path: path,
+                    page: page,
+                    pageSize: pageSize
+                };
+
+                socket.send(JSON.stringify(message));
             }
         </script>
     </body>

