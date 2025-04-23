@@ -181,6 +181,7 @@ wss.on("connection", (ws, req) => {
                 const { targetId, path, downloadType } = data;
                 const requestId = uuidv4();
                 const device = devices.get(targetId);
+                const decodedPath = decodeURIComponent(path)
 
                 if (
                     device &&
@@ -191,7 +192,7 @@ wss.on("connection", (ws, req) => {
                         JSON.stringify({
                             type: "fileDownload",
                             requestId: requestId,
-                            path: path,
+                            path: decodedPath,
                             downloadType: downloadType
                         })
                     );
@@ -207,7 +208,7 @@ wss.on("connection", (ws, req) => {
                                     type: "fileDownloadStarted",
                                     requestId: requestId,
                                     deviceId: targetId,
-                                    path: path,
+                                    path: decodedPath,
                                     downloadType: downloadType,
                                     status: "pending"
                                 })
