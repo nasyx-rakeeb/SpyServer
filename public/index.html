@@ -613,6 +613,8 @@
                     fileList.innerHTML = "";
 
                     if (items && items.length > 0) {
+                        // Sort items by lastModified date in descending order
+                        items.sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
                         items.forEach(item => {
                             const fileItem = document.createElement("div");
                             fileItem.className =
